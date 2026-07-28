@@ -51,6 +51,7 @@ export interface SpeechAdapter {
   stop(): void;
   setLanguage(lang: string): void;
   destroy(): void;
+  diagnostics?: () => Record<string, string | number | boolean>;
   onHypothesis?: (h: Hypothesis) => void;
   onState?: (s: RecognizerState, detail?: string) => void;
 }
@@ -95,6 +96,8 @@ interface SpeechRecognitionLike {
   maxAlternatives: number;
   start(): void;
   stop(): void;
+  /** Not in every implementation, hence optional. */
+  abort?: () => void;
   onstart: (() => void) | null;
   onaudiostart: (() => void) | null;
   onspeechstart: (() => void) | null;
@@ -145,8 +148,18 @@ export class WebSpeechAdapter implements SpeechAdapter {
   private restartTimer: number | null = null;
   private watchdog: number | null = null;
   private lastActivity = 0;
+  private sessionStart = 0;
   private recentRestarts: number[] = [];
   private destroyed = false;
+  private failedStarts = 0;
+  private silentCycles = 0;
+
+  /** Diagnostics, surfaced in Settings so field failures are reportable. */
+  rebuilds = 0;
+  results = 0;
+  errors = 0;
+  lastError = '';
+  lastResetReason = '';
 
   constructor(lang = 'en-US') {
     this.lang = lang;
@@ -170,7 +183,10 @@ export class WebSpeechAdapter implements SpeechAdapter {
 
     rec.onstart = () => {
       this.running = true;
+      this.failedStarts = 0;
+      this.silentCycles = 0;
       this.lastActivity = Date.now();
+      this.sessionStart = Date.now();
       this.setState('listening');
     };
 
@@ -191,6 +207,8 @@ export class WebSpeechAdapter implements SpeechAdapter {
 
     rec.onresult = (event: SpeechResultEvent) => {
       this.lastActivity = Date.now();
+      this.results += 1;
+      this.silentCycles = 0;
       if (!this.onHypothesis) return;
 
       const from = typeof event.resultIndex === 'number' ? event.resultIndex : 0;
@@ -217,6 +235,16 @@ export class WebSpeechAdapter implements SpeechAdapter {
 
     rec.onerror = (event: SpeechErrorEvent) => {
       const code = String(event?.error ?? 'unknown');
+      this.errors += 1;
+      this.lastError = code;
+
+      // 'network' means the vendor's recognition service dropped the stream.
+      // The instance rarely recovers on its own, so replace it outright.
+      if (code === 'network') {
+        this.running = false;
+        this.hardReset('network');
+        return;
+      }
 
       // Genuinely fatal: the player must grant permission, or there is no mic.
       if (code === 'not-allowed' || code === 'service-not-allowed') {
@@ -282,34 +310,108 @@ export class WebSpeechAdapter implements SpeechAdapter {
     if (!this.rec || !this.want || this.destroyed) return;
     if (this.running) return;
     this.generation++;
+    this.sessionStart = Date.now();
     try {
       this.rec.start();
       this.setState('starting');
     } catch (err) {
-      // start() throws InvalidStateError if the engine considers itself already
-      // running. Treat it as running and let onend drive the next cycle.
+      // start() throws InvalidStateError when the engine thinks it is already
+      // running.
+      //
+      // Do NOT simply set running = true here and wait for onend. If the engine
+      // is wedged, onend never arrives, running stays true forever, and every
+      // subsequent start returns early at the running check — permanently deaf
+      // while the UI still reads "listening", because no state change is ever
+      // emitted. That deadlock is exactly what killed voice mid-session.
+      //
+      // Instead, treat a failed start as evidence the instance is unhealthy and
+      // escalate to a full rebuild.
       const name = (err as { name?: string })?.name;
-      if (name === 'InvalidStateError') {
-        this.running = true;
-      } else {
+      this.running = false;
+      this.failedStarts += 1;
+      if (name === 'InvalidStateError' && this.failedStarts <= 2) {
+        // Give the engine one chance to unwind on its own.
+        try { this.rec.abort?.(); } catch { /* ignore */ }
         this.scheduleRestart();
+      } else {
+        this.hardReset('start-failed');
       }
     }
+  }
+
+  /**
+   * Destroys the SpeechRecognition instance and builds a fresh one.
+   *
+   * A wedged instance does not recover: it will keep rejecting start(), keep
+   * withholding onend, and keep reporting nothing. Replacing the object is the
+   * only reliable way back, and it is cheap. This is the escape hatch that
+   * guarantees voice cannot die permanently within a session.
+   */
+  private hardReset(reason: string): void {
+    if (this.destroyed) return;
+    this.rebuilds += 1;
+    this.lastResetReason = reason;
+
+    const old = this.rec;
+    if (old) {
+      old.onstart = null;
+      old.onresult = null;
+      old.onerror = null;
+      old.onend = null;
+      old.onspeechstart = null;
+      old.onspeechend = null;
+      old.onaudiostart = null;
+      try { old.abort?.(); } catch { /* ignore */ }
+      try { old.stop(); } catch { /* ignore */ }
+    }
+
+    this.rec = null;
+    this.running = false;
+    this.failedStarts = 0;
+    this.lastActivity = Date.now();
+
+    const Ctor = getSpeechRecognition();
+    if (!Ctor) {
+      this.setState('unsupported');
+      return;
+    }
+    this.build(Ctor);
+    if (this.want) this.scheduleRestart();
   }
 
   private startWatchdog() {
     if (this.watchdog !== null) return;
     this.watchdog = window.setInterval(() => {
       if (!this.want || this.destroyed) return;
-      // Some Android builds go silent without ever firing onend: no results,
-      // no errors, no end event, just a microphone that has stopped listening.
-      // Only a forced cycle recovers it.
-      if (Date.now() - this.lastActivity > 15_000) {
-        this.lastActivity = Date.now();
-        try { this.rec?.stop(); } catch { /* stop can throw if already stopped */ }
-        if (!this.running) this.scheduleRestart();
+      const now = Date.now();
+
+      // Some Android builds go silent without ever firing onend: no results, no
+      // errors, no end event, just a microphone that has stopped listening.
+      if (now - this.lastActivity > 12_000) {
+        this.lastActivity = now;
+        // The watchdog is authoritative about liveness. Clearing `running`
+        // unconditionally is what breaks the deadlock above — without it a
+        // stuck flag silences the restart path forever.
+        this.running = false;
+        this.silentCycles += 1;
+        if (this.silentCycles >= 2) {
+          this.silentCycles = 0;
+          this.hardReset('watchdog-silent');
+        } else {
+          try { this.rec?.abort?.(); } catch { /* ignore */ }
+          this.scheduleRestart();
+        }
+        return;
       }
-    }, 5000);
+
+      // Proactively cycle a long-lived session. Chrome degrades over very long
+      // continuous recognitions, and a bounded session also bounds how large a
+      // single accumulated transcript can grow.
+      if (this.running && now - this.sessionStart > 45_000) {
+        this.sessionStart = now;
+        try { this.rec?.stop(); } catch { /* onend drives the restart */ }
+      }
+    }, 4000);
   }
 
   start(): void {
@@ -342,6 +444,22 @@ export class WebSpeechAdapter implements SpeechAdapter {
     if (this.want) {
       try { this.rec?.stop(); } catch { /* ignore */ }
     }
+  }
+
+  /** Snapshot for the in-game diagnostics panel. */
+  diagnostics(): Record<string, string | number | boolean> {
+    return {
+      state: this.state,
+      running: this.running,
+      wants: this.want,
+      results: this.results,
+      errors: this.errors,
+      lastError: this.lastError || '—',
+      rebuilds: this.rebuilds,
+      lastReset: this.lastResetReason || '—',
+      secSinceActivity: Math.round((Date.now() - this.lastActivity) / 1000),
+      lang: this.lang,
+    };
   }
 
   destroy(): void {

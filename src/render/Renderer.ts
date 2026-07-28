@@ -247,6 +247,7 @@ export class Renderer {
     this.drawShockwaves(game);
     this.drawBeams(game);
     this.drawBlocks(game);
+    this.drawShards(game);
     this.drawParticles(game);
     this.drawPickups(game);
     this.drawShip(game);
@@ -599,6 +600,54 @@ export class Renderer {
       c.stroke();
     }
     c.restore();
+  }
+
+  /**
+   * Boss shards closing on the ship. Drawn hot and angular so they read as
+   * incoming ordnance rather than as another block to solve at leisure.
+   */
+  private drawShards(game: GameCore): void {
+    const c = this.ctx;
+    for (const s of game.shards) {
+      if (!s.alive) continue;
+      const a = s.dying > 0 ? s.dying : Math.min(1, s.intro * 1.5);
+      if (a <= 0.02) continue;
+      const scale = (s.dying > 0 ? 1 + (1 - s.dying) * 0.7 : 0.6 + s.intro * 0.4);
+      const r = 15 * scale;
+
+      c.save();
+      c.globalAlpha = a;
+      c.translate(s.x, s.y);
+      c.rotate(s.spin);
+
+      if (this.quality === 'high') {
+        c.shadowColor = '#ff2d95';
+        c.shadowBlur = 16;
+      }
+      c.fillStyle = 'rgba(40,2,24,0.94)';
+      c.strokeStyle = '#ff2d95';
+      c.lineWidth = 2;
+      c.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const ang = (i / 6) * Math.PI * 2;
+        const px = Math.cos(ang) * r;
+        const py = Math.sin(ang) * r;
+        if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
+      }
+      c.closePath();
+      c.fill();
+      c.stroke();
+
+      // Counter-rotate so the digit stays upright and readable.
+      c.rotate(-s.spin);
+      c.shadowBlur = 0;
+      c.fillStyle = '#ffffff';
+      c.font = `900 ${Math.round(17 * scale)}px ui-monospace, 'SF Mono', Menlo, Consolas, monospace`;
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText(String(s.digit), 0, 1);
+      c.restore();
+    }
   }
 
   /** Power-up tokens in flight toward the ship. */

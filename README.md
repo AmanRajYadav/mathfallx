@@ -6,7 +6,7 @@ A synthwave arcade drill where maths problems fall toward your city and you dest
 them by **speaking the answer** — no typing, no aiming, no buttons. Built mobile-first,
 installable as an app, and playable offline.
 
-**Play:** https://amanrajyadav.github.io/mathfall/
+**Play:** https://amanrajyadav.github.io/mathfallx/
 
 ---
 
@@ -135,13 +135,18 @@ date as a PRNG seed. No network call, no payload, works on a plane.
 Power-ups drop from destroyed blocks and fly to your ship on their own. You spend them
 by **saying their name**.
 
-| Say | Effect |
-|---|---|
-| **"FREEZE"** | Everything stops for 4s |
-| **"SLOW"** | Half speed for 7s |
-| **"NUKE"** | Clears the screen |
-| **"SHIELD"** | Restores one shield |
-| **"DOUBLE"** | Double score for 10s |
+| Power-up | Effect | Key | Trigger |
+|---|---|---|---|
+| ❄ **FREEZE** | Everything stops for 4s | `F` | automatic on pickup |
+| ◷ **SLOW** | Half speed for 7s | `S` | automatic on pickup |
+| ◈ **SHIELD** | Restores one shield | `H` | automatic on pickup |
+| ☢ **NUKE** | Clears the screen | `N` | say it, tap it, or **shake the phone** |
+| ✦ **DOUBLE** | Double score for 10s | `D` | say it or tap it |
+
+The defensive three fire the instant you collect them. When the screen is already
+getting away from you, a decision is the last thing that helps — by the time you've made
+it, the block has landed. The tactical two stay in your hands, because spending those at
+the right moment is the whole point of holding them.
 
 The design constraint is the interesting part. In a game whose only input is speech, a
 power-up you collect by *steering* forces a second, competing control scheme — which is
@@ -170,6 +175,21 @@ misread as burning an item.
   actually answer.
 - **The ship banks into its target** and its engines burn brighter as your chain grows,
   so a long combo is something you can see building.
+- **The gun sounds like a gun.** Following ZType, whose plasma shot is three layered
+  samples, each shot is a hard noise transient for the crack, a downward sweep for the
+  body, and a pitched tail that climbs the scale with your combo. A wrong input answers
+  with a dry detuned minor second — dissonant enough to register instantly.
+
+## Defend the ship
+
+Bosses don't just fall. Following ZType's Oppressor, they periodically spray **single
+digit shards** that home in on your ship. Say the digit to shoot one down; let it through
+and it costs a shield.
+
+This is what turns the ship from a scoreboard into something you're defending — before
+it, nothing could ever reach you and the floor was the only threat. Shard digits are
+always distinct from every answer on screen, so a shouted "seven" is never ambiguous
+between the thing about to hit you and a block drifting down elsewhere.
 
 ## Modes
 

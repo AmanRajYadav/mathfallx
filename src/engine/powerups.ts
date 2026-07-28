@@ -24,6 +24,18 @@ export interface PowerUpDef {
   /** Seconds the effect lasts. 0 means instantaneous. */
   duration: number;
   blurb: string;
+  /** Desktop shortcut. */
+  key: string;
+  /**
+   * Fires the instant it is collected, with no player action.
+   *
+   * Reserved for the purely defensive ones. When the screen is already getting
+   * away from you, the last thing that helps is a decision to make — and by
+   * the time you have decided, the block has landed. The tactical power-ups
+   * (nuke, double) stay manual, because spending those at the right moment is
+   * the whole point of holding them.
+   */
+  auto: boolean;
   /**
    * Everything a player might plausibly say to trigger it, including the
    * homophones speech engines reliably produce for each word.
@@ -39,6 +51,8 @@ export const POWER_UPS: Record<PowerUpType, PowerUpDef> = {
     hue: 190,
     duration: 4,
     blurb: 'Everything stops for 4s',
+    key: 'f',
+    auto: true,
     spoken: ['freeze', 'frees', 'freezing', 'ice', 'stop', 'frieze'],
   },
   slow: {
@@ -48,6 +62,8 @@ export const POWER_UPS: Record<PowerUpType, PowerUpDef> = {
     hue: 265,
     duration: 7,
     blurb: 'Half speed for 7s',
+    key: 's',
+    auto: true,
     spoken: ['slow', 'slower', 'slow motion', 'slowmo', 'slow', 'low'],
   },
   nuke: {
@@ -57,6 +73,8 @@ export const POWER_UPS: Record<PowerUpType, PowerUpDef> = {
     hue: 12,
     duration: 0,
     blurb: 'Clears the screen',
+    key: 'n',
+    auto: false,
     spoken: ['nuke', 'nuk', 'newk', 'bomb', 'blast', 'boom', 'nook'],
   },
   shield: {
@@ -66,6 +84,8 @@ export const POWER_UPS: Record<PowerUpType, PowerUpDef> = {
     hue: 150,
     duration: 0,
     blurb: 'Restores one shield',
+    key: 'h',
+    auto: true,
     spoken: ['shield', 'shields', 'sheild', 'guard', 'armor', 'armour', 'shed'],
   },
   double: {
@@ -75,6 +95,8 @@ export const POWER_UPS: Record<PowerUpType, PowerUpDef> = {
     hue: 45,
     duration: 10,
     blurb: 'Double score for 10s',
+    key: 'd',
+    auto: false,
     spoken: ['double', 'dubble', 'doubles', 'twice', 'bubble'],
   },
 };

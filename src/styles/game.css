@@ -676,6 +676,63 @@
   cursor: pointer;
 }
 
+/* Fluence signature */
+.mf-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 10px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(234, 230, 255, 0.5);
+  text-decoration: none;
+}
+
+.mf-brand strong {
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  background: linear-gradient(90deg, #00f0ff, #c17bff, #ff2d95);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.mf-brand-heart {
+  filter: drop-shadow(0 0 6px rgba(255, 45, 149, 0.7));
+}
+
+/* Voice diagnostics readout */
+.mf-diag {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(6, 2, 18, 0.7);
+  padding: 10px 12px;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.mf-diag > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mf-diag span { color: rgba(234, 230, 255, 0.45); }
+.mf-diag b {
+  color: #00f0ff;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mf-pill[data-on='true'] {
   border-color: rgba(0, 240, 255, 0.6);
   background: rgba(0, 240, 255, 0.16);

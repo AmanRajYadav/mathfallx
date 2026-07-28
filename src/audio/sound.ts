@@ -16,7 +16,8 @@
 
 export type Sfx =
   | 'zap' | 'explode' | 'boss' | 'armor' | 'reject'
-  | 'miss' | 'wave' | 'overdrive' | 'tick' | 'ui';
+  | 'miss' | 'wave' | 'overdrive' | 'tick' | 'ui'
+  | 'shard' | 'shardKill' | 'shipHit';
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
@@ -115,16 +116,30 @@ export function playSfx(name: Sfx, intensity = 0): void {
 
   switch (name) {
     case 'zap': {
-      // Pentatonic steps, so consecutive hits stay consonant however long the
-      // chain runs.
+      // ZType's plasma gun is three samples layered — an artillery blast, a
+      // bullet impact, and a retro laser synth. Same idea, synthesised: a hard
+      // noise transient for the crack, a fast downward sweep for the body, and
+      // a pitched tail that climbs the scale with the combo. The transient is
+      // what makes it feel like a gun rather than a beep.
       const scale = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];
       const step = scale[Math.min(scale.length - 1, intensity % (scale.length * 2))];
       const base = 520 * Math.pow(2, step / 12);
-      tone(base, base * 1.9, 0.11, 'square', 0.16);
-      tone(base * 2, base * 3.2, 0.07, 'triangle', 0.09, 0.01);
-      noise(0.09, 0.10, 5200, 900);
+
+      noise(0.035, 0.34, 9000, 2600);            // crack
+      tone(base * 3.4, base * 0.7, 0.09, 'sawtooth', 0.2);  // body sweep
+      tone(base, base * 1.6, 0.12, 'square', 0.13, 0.012);  // pitched tail
+      noise(0.13, 0.09, 2200, 320, 0.02);        // low thump
       break;
     }
+    case 'shard':
+      // Incoming: a rising alarm, deliberately unpleasant.
+      tone(300, 900, 0.16, 'sawtooth', 0.11);
+      noise(0.12, 0.07, 3000, 1200);
+      break;
+    case 'shardKill':
+      tone(880, 1500, 0.06, 'square', 0.13);
+      noise(0.07, 0.14, 6000, 1400);
+      break;
     case 'explode':
       noise(0.34, 0.30, 3600, 140);
       tone(180, 42, 0.3, 'sawtooth', 0.14);
@@ -139,11 +154,21 @@ export function playSfx(name: Sfx, intensity = 0): void {
       noise(0.1, 0.14, 2400, 600);
       break;
     case 'reject':
-      tone(210, 130, 0.14, 'sawtooth', 0.11);
+      // A wrong input has to feel wrong. A dry, detuned minor second buzzing
+      // against itself is dissonant enough to register instantly without being
+      // loud — the same job ZType's miss sound does for a broken streak.
+      tone(196, 178, 0.13, 'sawtooth', 0.13);
+      tone(207, 190, 0.13, 'square', 0.09, 0.005);
+      noise(0.06, 0.06, 900, 300);
       break;
     case 'miss':
       tone(300, 60, 0.5, 'sawtooth', 0.2);
       noise(0.45, 0.24, 1500, 80);
+      break;
+    case 'shipHit':
+      // Hull breach: heavier and lower than a missed block.
+      tone(160, 40, 0.55, 'square', 0.24);
+      noise(0.4, 0.3, 900, 60);
       break;
     case 'wave':
       tone(392, 784, 0.22, 'triangle', 0.14);

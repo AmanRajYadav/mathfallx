@@ -97,6 +97,7 @@ export class VoiceInput {
 
   state: RecognizerState = 'idle';
   lastTranscript = '';
+  matchCount = 0;
 
   constructor(opts: VoiceInputOptions = {}) {
     this.opts = opts;
@@ -130,6 +131,25 @@ export class VoiceInput {
 
   setLanguage(lang: string): void {
     this.adapter.setLanguage(lang);
+  }
+
+  /** Manual recovery, exposed in Settings for when everything else has failed. */
+  restart(): void {
+    this.actedPrefix.clear();
+    this.lastFired.clear();
+    this.adapter.stop();
+    if (this.enabled) window.setTimeout(() => this.adapter.start(), 150);
+  }
+
+  diagnostics(): Record<string, string | number | boolean> {
+    const base = this.adapter.diagnostics?.() ?? {};
+    return {
+      ...base,
+      enabled: this.enabled,
+      liveTargets: this.targets.size,
+      matches: this.matchCount,
+      lastHeard: this.lastTranscript || '—',
+    };
   }
 
   /** Tells the matcher a value was acted on, suppressing immediate repeats. */
@@ -211,6 +231,7 @@ export class VoiceInput {
       // which is what lets a player say the same number twice in a row.
       this.actedPrefix.set(h.utteranceId, best.sourceText);
       this.lastFired.set(best.value, { at: Date.now(), utterance: h.utteranceId });
+      this.matchCount += 1;
 
       this.opts.onMatch?.({
         value: best.value,

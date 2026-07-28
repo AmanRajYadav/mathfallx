@@ -1,8 +1,8 @@
 {
-  "name": "mathfall",
+  "name": "mathfallx",
   "private": true,
   "version": "0.0.0",
-  "homepage": "https://amanrajyadav.github.io/mathfall",
+  "homepage": "https://amanrajyadav.github.io/mathfallx",
   "type": "module",
   "scripts": {
     "dev": "vite",

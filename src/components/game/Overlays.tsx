@@ -29,6 +29,43 @@ function fmtTime(ms: number): string {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
+/**
+ * Fluence mark — an inline SVG so it stays crisp at any density, themes with
+ * the page, and costs no extra request. Three ascending strokes reading as
+ * flow, wrapped in a rounded token.
+ */
+export const FluenceMark: React.FC<{ size?: number }> = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true">
+    <rect x="1.5" y="1.5" width="29" height="29" rx="9"
+      stroke="url(#fl-g)" strokeWidth="2.2" />
+    <path d="M10 21.5c0-6 3.2-9 6.4-9 2.2 0 3.4 1.3 3.4 3"
+      stroke="url(#fl-g)" strokeWidth="2.6" strokeLinecap="round" />
+    <path d="M8.5 16.5h9" stroke="url(#fl-g)" strokeWidth="2.6" strokeLinecap="round" />
+    <circle cx="22.5" cy="21" r="1.8" fill="#ff2d95" />
+    <defs>
+      <linearGradient id="fl-g" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+        <stop stopColor="#00f0ff" />
+        <stop offset="0.55" stopColor="#c17bff" />
+        <stop offset="1" stopColor="#ff2d95" />
+      </linearGradient>
+    </defs>
+  </svg>
+);
+
+export const FluenceBadge: React.FC = () => (
+  <a
+    className="mf-brand"
+    href="https://fluence.study"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    <FluenceMark size={17} />
+    <span>
+      made with <span className="mf-brand-heart">❤️</span> by <strong>FLUENCE</strong>
+    </span>
+  </a>
+);
+
 function Stat({ k, v, sub }: { k: string; v: React.ReactNode; sub?: string }) {
   return (
     <div className="mf-stat">
@@ -119,6 +156,8 @@ export const TitleScreen: React.FC<TitleProps> = ({ profile, voiceSupported, dai
             on Android or Safari on iOS.
           </p>
         )}
+
+        <FluenceBadge />
       </div>
     </div>
   );
@@ -211,6 +250,8 @@ export const GameOverScreen: React.FC<{
         <button className="mf-btn mf-btn--ghost" onClick={onMenu}>
           <ArrowLeft size={17} /> Main menu
         </button>
+
+        <FluenceBadge />
       </div>
     </div>
   );
@@ -226,10 +267,13 @@ interface SettingsProps {
   onReset: () => void;
   onTestVoice: (phrase: string) => void;
   testResult: string;
+  diagnostics: Record<string, string | number | boolean>;
+  onRestartVoice: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsProps> = ({
   profile, voiceSupported, onChange, onBack, onReset, onTestVoice, testResult,
+  diagnostics, onRestartVoice,
 }) => {
   const s = profile.settings;
   const [testPhrase, setTestPhrase] = React.useState('forty two');
@@ -308,6 +352,24 @@ export const SettingsScreen: React.FC<SettingsProps> = ({
           </div>
         )}
 
+        <div className="mf-h2">Voice diagnostics</div>
+        <p className="mf-note">
+          If voice stops responding mid-run, open this and screenshot it. <strong>rebuilds</strong>{' '}
+          climbing means the recogniser wedged and was replaced; a stuck{' '}
+          <strong>secSinceActivity</strong> means it went deaf.
+        </p>
+        <div className="mf-diag">
+          {Object.entries(diagnostics).map(([k, v]) => (
+            <div key={k}>
+              <span>{k}</span>
+              <b>{String(v)}</b>
+            </div>
+          ))}
+        </div>
+        <button className="mf-btn mf-btn--ghost" onClick={onRestartVoice}>
+          <RotateCcw size={16} /> Restart microphone
+        </button>
+
         <div className="mf-h2">Game</div>
         <div>
           <div className="mf-row">
@@ -320,6 +382,18 @@ export const SettingsScreen: React.FC<SettingsProps> = ({
               data-on={s.gentleFall}
               onClick={() => onChange('gentleFall', !s.gentleFall)}
               aria-label="Toggle gentle fall"
+            />
+          </div>
+          <div className="mf-row">
+            <span className="mf-row-label">
+              Shake to nuke
+              <span className="mf-row-hint">Shake the phone to spend a held nuke</span>
+            </span>
+            <button
+              className="mf-switch"
+              data-on={s.shakeToNuke}
+              onClick={() => onChange('shakeToNuke', !s.shakeToNuke)}
+              aria-label="Toggle shake to nuke"
             />
           </div>
           <div className="mf-row">

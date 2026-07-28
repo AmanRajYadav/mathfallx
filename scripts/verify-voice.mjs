@@ -279,6 +279,51 @@ check('"nine nine nine nine" still offers 9',
 has('four two', 42);
 has('one oh five', 105);
 
+console.log('— recognizer cannot deadlock —');
+
+/**
+ * The failure that killed voice mid-session: start() throws InvalidStateError,
+ * the old code set running = true and waited for an onend that never came, and
+ * every subsequent start returned early forever — deaf, while still reporting
+ * "listening". The adapter must escalate to rebuilding the instance instead.
+ */
+{
+  let constructed = 0;
+  class WedgedRecognition {
+    constructor() { constructed++; }
+    lang = ''; continuous = false; interimResults = false; maxAlternatives = 1;
+    start() { const e = new Error('already started'); e.name = 'InvalidStateError'; throw e; }
+    stop() {}
+    abort() {}
+    onstart = null; onaudiostart = null; onspeechstart = null;
+    onspeechend = null; onresult = null; onerror = null; onend = null;
+  }
+
+  const timers = [];
+  globalThis.window = {
+    SpeechRecognition: WedgedRecognition,
+    setTimeout: (fn) => { timers.push(fn); return timers.length; },
+    clearTimeout: () => {},
+    setInterval: () => 1,
+    clearInterval: () => {},
+  };
+
+  const { WebSpeechAdapter } = await load('src/voice/recognizer.ts');
+  const a = new WebSpeechAdapter('en-US');
+  a.start();
+  // Drain the scheduled restarts; each start() throws again.
+  for (let i = 0; i < 12 && timers.length; i++) timers.shift()();
+
+  const d = a.diagnostics();
+  check('a wedged recognizer gets rebuilt rather than deadlocking',
+    a.rebuilds > 0, `rebuilds=${a.rebuilds} constructed=${constructed}`);
+  check('running is never left stuck true', d.running === false, `running=${d.running}`);
+  check('diagnostics expose the reset reason', typeof d.lastReset === 'string' && d.lastReset !== '—',
+    `lastReset=${d.lastReset}`);
+
+  delete globalThis.window;
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) {
   console.log('\nFailures:');

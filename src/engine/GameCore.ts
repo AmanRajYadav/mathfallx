@@ -60,6 +60,8 @@ export interface Block {
   intro: number;
   hit: number;
   dying: number;
+  /** Seconds until this block fires a shard. Bosses only. */
+  shootTimer: number;
 }
 
 export interface Particle {
@@ -86,6 +88,25 @@ export interface Popup {
   life: number;
   hue: number;
   big: boolean;
+}
+
+/**
+ * A single digit fired by a boss, homing on the ship.
+ *
+ * Lifted from ZType's Oppressor, which periodically sprays loose letters at the
+ * player. It is the mechanic that turns the ship from a scoreboard into
+ * something you are defending: until now nothing could ever reach it, so the
+ * floor was the only threat and the ship was decoration. A shard is answerable
+ * in one syllable, which keeps it fair when several are inbound at once.
+ */
+export interface Shard {
+  alive: boolean;
+  x: number; y: number;
+  vx: number; vy: number;
+  digit: number;
+  spin: number;
+  intro: number;
+  dying: number;
 }
 
 /** A dropped power-up in flight toward the ship. */
@@ -151,6 +172,9 @@ export type GameEvent =
   | { type: 'miss' }
   | { type: 'wave'; wave: number }
   | { type: 'overdrive' }
+  | { type: 'shard' }
+  | { type: 'shardKill' }
+  | { type: 'shipHit' }
   | { type: 'drop'; power: PowerUpType }
   | { type: 'collect'; power: PowerUpType }
   | { type: 'power'; power: PowerUpType }
@@ -201,6 +225,7 @@ const MAX_BEAMS = 12;
 const MAX_POPUPS = 20;
 const MAX_PICKUPS = 8;
 const MAX_SHOCKWAVES = 10;
+const MAX_SHARDS = 7;
 const MAX_INVENTORY = 3;
 const HUD_INTERVAL_MS = 90;
 
@@ -234,6 +259,7 @@ export class GameCore {
   popups: Popup[] = [];
   pickups: Pickup[] = [];
   shockwaves: Shockwave[] = [];
+  shards: Shard[] = [];
 
   inventory: PowerUpType[] = [];
   effects: ActiveEffect[] = [];
@@ -339,6 +365,76 @@ export class GameCore {
     for (let i = 0; i < MAX_SHOCKWAVES; i++) {
       this.shockwaves.push({ alive: false, x: 0, y: 0, r: 0, maxR: 1, life: 0, hue: 186, width: 3 });
     }
+    for (let i = 0; i < MAX_SHARDS; i++) {
+      this.shards.push({ alive: false, x: 0, y: 0, vx: 0, vy: 0, digit: 0, spin: 0, intro: 0, dying: 0 });
+    }
+  }
+
+  // ------------------------------------------------------------------ shards
+
+  /**
+   * Fires a digit shard from a boss toward the ship.
+   *
+   * The digit must be unused by anything else on screen. A spoken "seven" has
+   * to resolve to exactly one target, and a shard colliding with a block's
+   * answer would make the most urgent input in the game ambiguous.
+   */
+  private spawnShard(from: Block): void {
+    const taken = new Set<number>();
+    for (const b of this.blocks) if (b.dying <= 0) taken.add(b.answer);
+    for (const s of this.shards) if (s.alive && s.dying <= 0) taken.add(s.digit);
+
+    const free: number[] = [];
+    for (let d = 0; d <= 9; d++) if (!taken.has(d)) free.push(d);
+    if (free.length === 0) return;
+
+    const slot = this.shards.find((s) => !s.alive);
+    if (!slot) return;
+
+    const digit = free[Math.floor(this.rng.next() * free.length)];
+    const targetX = this.width / 2;
+    const targetY = this.playBottom - 20;
+    const angle = Math.atan2(targetY - from.y, targetX - from.x) + this.rng.float(-0.45, 0.45);
+    const speed = this.height * 0.055 * (this.profile.settings.gentleFall ? 0.75 : 1);
+
+    slot.alive = true;
+    slot.x = from.x;
+    slot.y = from.y + from.h / 2;
+    slot.vx = Math.cos(angle) * speed;
+    slot.vy = Math.sin(angle) * speed;
+    slot.digit = digit;
+    slot.spin = 0;
+    slot.intro = 0;
+    slot.dying = 0;
+    this.opts.onEvent?.({ type: 'shard' });
+    this.emitTargets();
+  }
+
+  /** Shot down by the player. */
+  private killShard(s: Shard, scored: boolean): void {
+    s.dying = 1;
+    this.burst(s.x, s.y, 14, 320, 0.9);
+    this.ring(s.x, s.y, 60, 320, 2);
+    if (scored) {
+      const gain = Math.round(8 * this.multiplier());
+      this.score += gain;
+      this.addPopup(s.x, s.y, `+${gain}`, 320, false);
+    }
+  }
+
+  /** Reached the ship. */
+  private shardHitsShip(s: Shard): void {
+    s.dying = 1;
+    this.combo = 0;
+    this.pressure = Math.max(0.6, this.pressure - 0.08);
+    if (this.config.mode !== 'zen') this.shield -= 1;
+    this.flash = Math.max(this.flash, 0.8);
+    this.applyShake(14, 0, -1);
+    this.burst(this.width / 2, this.playBottom - 18, 26, 0, 1.4);
+    this.ring(this.width / 2, this.playBottom - 18, 120, 0, 4);
+    this.hitStop = 70;
+    this.opts.onEvent?.({ type: 'shipHit' });
+    this.hudDirty = true;
   }
 
   // --------------------------------------------------------------- power-ups
@@ -454,6 +550,7 @@ export class GameCore {
     for (const p of this.popups) p.alive = false;
     for (const p of this.pickups) p.alive = false;
     for (const s of this.shockwaves) s.alive = false;
+    for (const s of this.shards) s.alive = false;
     this.inventory.length = 0;
     this.effects.length = 0;
     this.aim = 0;
@@ -598,6 +695,28 @@ export class GameCore {
    */
   submit(value: number, source: InputSource): boolean {
     if (this.status !== 'playing') return false;
+
+    // Shards come first. They are single digits closing on the ship, and if one
+    // shares a digit with anything else the player has no way to disambiguate —
+    // so answering the imminent threat is always the right reading.
+    if (value >= 0 && value <= 9) {
+      let shard: Shard | null = null;
+      for (const s of this.shards) {
+        if (!s.alive || s.dying > 0 || s.digit !== value) continue;
+        if (!shard || s.y > shard.y) shard = s;
+      }
+      if (shard) {
+        this.fireBeamAt(shard.x, shard.y, 320);
+        this.killShard(shard, true);
+        this.combo += 1;
+        if (this.combo > this.bestCombo) this.bestCombo = this.combo;
+        this.applyShake(4, shard.x - this.width / 2, shard.y - this.playBottom);
+        this.opts.onEvent?.({ type: 'shardKill' });
+        this.emitTargets();
+        this.hudDirty = true;
+        return true;
+      }
+    }
 
     let target: Block | null = null;
     for (const b of this.blocks) {
@@ -884,6 +1003,7 @@ export class GameCore {
       intro: 0,
       hit: 0,
       dying: 0,
+      shootTimer: kind === 'boss' ? 1.6 : 0,
     });
   }
 
@@ -1047,10 +1167,17 @@ export class GameCore {
 
       if (p.t >= 1 || (Math.abs(p.x - tx) < 14 && Math.abs(p.y - ty) < 14)) {
         p.alive = false;
-        if (this.inventory.length < MAX_INVENTORY) {
+        this.opts.onEvent?.({ type: 'collect', power: p.type });
+
+        // Defensive power-ups fire on contact. Holding a freeze while blocks
+        // are landing helps nobody: by the time you have decided to spend it,
+        // the shield is already gone.
+        if (POWER_UPS[p.type].auto) {
+          this.inventory.push(p.type);
+          this.activate(p.type);
+        } else if (this.inventory.length < MAX_INVENTORY) {
           this.inventory.push(p.type);
           this.addPopup(tx, ty - 40, POWER_UPS[p.type].label, p.hue, false);
-          this.opts.onEvent?.({ type: 'collect', power: p.type });
           this.hudDirty = true;
         }
       }
@@ -1130,6 +1257,15 @@ export class GameCore {
       if (b.intro < 1) b.intro = Math.min(1, b.intro + dt * 4.5);
       if (b.hit > 0) b.hit = Math.max(0, b.hit - dt * 3.5);
 
+      // Bosses lay down covering fire once they are on screen.
+      if (b.kind === 'boss' && b.readableAt > 0) {
+        b.shootTimer -= dt * this.timeScale;
+        if (b.shootTimer <= 0) {
+          b.shootTimer = this.rng.float(1.9, 3.4);
+          this.spawnShard(b);
+        }
+      }
+
       b.y += b.vy * dt * this.timeScale;
 
       // The clock starts when the block is fully visible, not when it spawns
@@ -1151,6 +1287,35 @@ export class GameCore {
     }
 
     this.separate();
+
+    // Shards close on the ship and detonate against it.
+    const shipX = this.width / 2;
+    const shipY = this.playBottom - 18;
+    for (const s of this.shards) {
+      if (!s.alive) continue;
+      if (s.dying > 0) {
+        s.dying -= dt * 5;
+        if (s.dying <= 0) { s.alive = false; changed = true; }
+        continue;
+      }
+      if (s.intro < 1) s.intro = Math.min(1, s.intro + dt * 5);
+      s.spin += dt * 3;
+
+      // Gentle homing, so a shard cannot simply be outlasted.
+      const ang = Math.atan2(shipY - s.y, shipX - s.x);
+      s.vx += Math.cos(ang) * 60 * dt;
+      s.vy += Math.sin(ang) * 60 * dt;
+      s.x += s.vx * dt * this.timeScale;
+      s.y += s.vy * dt * this.timeScale;
+
+      if (Math.hypot(s.x - shipX, s.y - shipY) < 22) {
+        this.shardHitsShip(s);
+        changed = true;
+      } else if (s.y > this.height + 40 || s.x < -40 || s.x > this.width + 40) {
+        s.alive = false;
+        changed = true;
+      }
+    }
 
     if (this.shield <= 0 && this.config.mode !== 'zen') {
       this.end();
@@ -1190,19 +1355,23 @@ export class GameCore {
   // ------------------------------------------------------------------ effects
 
   private fireBeam(block: Block): void {
-    const beam = this.beams.find((b) => !b.alive);
-    if (!beam) return;
-    const originY = this.playBottom - 22;
-    beam.alive = true;
-    beam.x1 = this.width / 2;
-    beam.y1 = originY;
-    beam.x2 = block.x;
-    beam.y2 = block.y + block.h / 2;
-    beam.life = 1;
-    beam.hue = block.hue;
+    this.fireBeamAt(block.x, block.y + block.h / 2, block.hue);
+  }
 
+  private fireBeamAt(x: number, y: number, hue: number): void {
+    const beam = this.beams.find((b) => !b.alive);
+    const originY = this.playBottom - 22;
+    if (beam) {
+      beam.alive = true;
+      beam.x1 = this.width / 2;
+      beam.y1 = originY;
+      beam.x2 = x;
+      beam.y2 = y;
+      beam.life = 1;
+      beam.hue = hue;
+    }
     // Point the hull at whatever it just shot, and charge the muzzle.
-    this.aim = Math.atan2(block.x - this.width / 2, originY - (block.y + block.h / 2));
+    this.aim = Math.atan2(x - this.width / 2, originY - y);
     this.charge = 1;
   }
 
@@ -1298,9 +1467,7 @@ export class GameCore {
 
   private emitTargets(): void {
     if (!this.opts.onTargets) return;
-    const answers: number[] = [];
-    for (const b of this.blocks) if (b.dying <= 0) answers.push(b.answer);
-    this.opts.onTargets(answers);
+    this.opts.onTargets(this.liveAnswers());
   }
 
   private pushHud(): void {
@@ -1336,6 +1503,7 @@ export class GameCore {
   liveAnswers(): number[] {
     const out: number[] = [];
     for (const b of this.blocks) if (b.dying <= 0) out.push(b.answer);
+    for (const s of this.shards) if (s.alive && s.dying <= 0) out.push(s.digit);
     return out;
   }
 }

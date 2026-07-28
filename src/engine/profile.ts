@@ -34,6 +34,8 @@ export interface Settings {
   reduceMotion: boolean;
   /** Slows the fall speed without touching problem difficulty. */
   gentleFall: boolean;
+  /** Shake the phone to fire a held nuke. */
+  shakeToNuke: boolean;
 }
 
 export interface SyncEvent {
@@ -88,6 +90,7 @@ export function defaultSettings(): Settings {
     quality: 'auto',
     reduceMotion: false,
     gentleFall: false,
+    shakeToNuke: true,
   };
 }
 

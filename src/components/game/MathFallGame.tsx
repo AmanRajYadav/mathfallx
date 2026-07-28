@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { GameCore, type GameEvent, type HudState, type RunSummary } from '../../engine/GameCore';
+import { POWER_UP_LIST } from '../../engine/powerups';
 import type { Skill } from '../../engine/generator';
 import { dailyKey } from '../../engine/rng';
 import {
@@ -149,6 +150,17 @@ const MathFallGame: React.FC = () => {
         case 'powerFail':
           playSfx('reject');
           break;
+        case 'shard':
+          playSfx('shard');
+          break;
+        case 'shardKill':
+          playSfx('shardKill');
+          if (haptics) vibrate(10);
+          break;
+        case 'shipHit':
+          playSfx('shipHit');
+          if (haptics) vibrate([60, 40, 90]);
+          break;
         case 'gameover':
           stopMusic();
           playMusic('over', false);
@@ -279,6 +291,18 @@ const MathFallGame: React.FC = () => {
     // Everything the previous run left behind, cleared together. A stale digit
     // or a stale transcript reappearing on replay makes it look like the game
     // is still reacting to something you said a minute ago.
+    // iOS 13+ gates the motion sensors behind a permission that can only be
+    // requested from a user gesture, so it has to happen here rather than in
+    // the effect that installs the listener.
+    if (profile.settings.shakeToNuke) {
+      const DME = window.DeviceMotionEvent as unknown as {
+        requestPermission?: () => Promise<'granted' | 'denied'>;
+      } | undefined;
+      if (DME && typeof DME.requestPermission === 'function') {
+        void DME.requestPermission().catch(() => undefined);
+      }
+    }
+
     setInput('');
     setSummary(null);
     setVoiceUi((v) => ({ ...v, heard: '', lastMatch: null, lastMatchAt: 0, miss: null }));
@@ -407,10 +431,63 @@ const MathFallGame: React.FC = () => {
       // what you want when a half-typed number is blocking the next answer.
       else if (e.key === ' ') { e.preventDefault(); handleKey('clear'); }
       else if (e.key === 'b' || e.key === 'B') { e.preventDefault(); game.triggerOverdrive(); }
+      else {
+        // Power-up shortcuts: f freeze, s slow, n nuke, d double, h shield.
+        const key = e.key.toLowerCase();
+        const def = POWER_UP_LIST.find((p) => p.key === key);
+        if (def) {
+          e.preventDefault();
+          game.activate(def.type);
+        }
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [handleKey, pauseGame, resumeGame, startGame]);
+
+  /**
+   * Shake to nuke.
+   *
+   * Detects a jerk — the rate of change of acceleration — rather than raw
+   * magnitude. Plain magnitude triggers constantly from ordinary hand movement
+   * while playing; a sharp reversal only happens when you deliberately shake
+   * the phone. A cooldown stops one shake registering as several.
+   */
+  useEffect(() => {
+    if (!profileRef.current.settings.shakeToNuke) return;
+
+    let lastX = 0, lastY = 0, lastZ = 0;
+    let lastFire = 0;
+    let primed = false;
+
+    const onMotion = (e: DeviceMotionEvent) => {
+      const a = e.accelerationIncludingGravity;
+      if (!a || a.x == null || a.y == null || a.z == null) return;
+
+      const jerk = Math.abs(a.x - lastX) + Math.abs(a.y - lastY) + Math.abs(a.z - lastZ);
+      lastX = a.x; lastY = a.y; lastZ = a.z;
+
+      // Two-stage: a shake has to cross the bar, drop below it, and cross
+      // again. That is the difference between a shake and a single knock.
+      if (jerk > 34) {
+        const now = Date.now();
+        if (primed && now - lastFire > 1200) {
+          lastFire = now;
+          primed = false;
+          const g = gameRef.current;
+          if (g?.status === 'playing') {
+            initAudio();
+            if (!g.activate('nuke') && profileRef.current.settings.haptics) vibrate(20);
+          }
+        }
+      } else if (jerk < 12) {
+        primed = true;
+      }
+    };
+
+    window.addEventListener('devicemotion', onMotion);
+    return () => window.removeEventListener('devicemotion', onMotion);
+  }, [profileVersion]);
 
   // Leaving the tab kills the microphone anyway, so pause rather than let the
   // player return to a dead run.
@@ -541,6 +618,12 @@ const MathFallGame: React.FC = () => {
           onReset={doReset}
           onTestVoice={testVoice}
           testResult={testResult}
+          diagnostics={voiceRef.current?.diagnostics() ?? {}}
+          onRestartVoice={() => {
+            initAudio();
+            voiceRef.current?.restart();
+            setTestResult('Microphone restarted.');
+          }}
         />
       )}
 
