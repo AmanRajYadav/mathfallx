@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   ArrowLeft, CalendarDays, ChartNoAxesColumn, Gauge, Infinity as InfinityIcon,
-  Mic, Play, RotateCcw, Settings, Sparkles, Timer, Trophy,
+  Mic, Play, RotateCcw, Settings, Sparkles, Sprout, Timer, Trophy,
 } from 'lucide-react';
 import type { RunSummary } from '../../engine/GameCore';
 import { rankFor } from '../../engine/adaptive';
@@ -114,6 +114,14 @@ export const TitleScreen: React.FC<TitleProps> = ({ profile, voiceSupported, dai
         </button>
 
         <div className="mf-h2">Modes</div>
+
+        <button className="mf-btn" onClick={() => onStart('easy')}>
+          <Sprout className="mf-btn-icon" size={22} />
+          <span className="mf-btn-text">
+            <span>Easy</span>
+            <span className="mf-btn-sub">Answers under 20, slower fall, 5 shields</span>
+          </span>
+        </button>
 
         <button className="mf-btn" onClick={() => onStart('daily')}>
           <CalendarDays className="mf-btn-icon" size={22} />

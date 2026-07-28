@@ -23,8 +23,7 @@
  * between the game feeling instant and feeling laggy.
  */
 
-import { extractCommand, extractNumbers, type VoiceCommand } from './numbers';
-import { matchPowerUpPhrase, type PowerUpType } from '../engine/powerups';
+import { extractNumbers } from './numbers';
 import {
   WebSpeechAdapter,
   isSpeechSupported,
@@ -47,9 +46,6 @@ export interface VoiceInputOptions {
   onMatch?: (m: VoiceMatch) => void;
   onHeard?: (text: string, isFinal: boolean) => void;
   onState?: (s: RecognizerState, detail?: string) => void;
-  onCommand?: (c: VoiceCommand) => void;
-  /** The player shouted a power-up name. */
-  onPowerUp?: (p: PowerUpType) => void;
   /**
    * A number was clearly understood but is not on screen. Worth surfacing:
    * silence leaves the player unsure whether the microphone failed or their
@@ -248,35 +244,17 @@ export class VoiceInput {
       return;
     }
 
-    // Commands only on final results. Acting on an interim "wait" while the
-    // player is midway through saying "eight" would be maddening.
     if (!h.isFinal) return;
 
-    // Power-ups are checked before generic commands, and on the freshest words
-    // only — the accumulated transcript of a long utterance would otherwise
-    // re-trigger a power-up the player already spent. A null suffix means
-    // nothing new has been said since the last action, so there is nothing to
-    // react to at all.
+    // A null suffix means nothing new has been said since the last action.
     const freshest = suffixAfter(h.transcript, this.actedPrefix.get(h.utteranceId) ?? '');
     if (freshest === null) return;
 
-    if (this.opts.onPowerUp) {
-      const power = matchPowerUpPhrase(freshest);
-      if (power) {
-        this.actedPrefix.set(h.utteranceId, h.transcript);
-        this.opts.onPowerUp(power);
-        return;
-      }
-    }
-
-    if (this.opts.onCommand) {
-      const cmd = extractCommand(freshest);
-      if (cmd) {
-        this.actedPrefix.set(h.utteranceId, h.transcript);
-        this.opts.onCommand(cmd);
-        return;
-      }
-    }
+    // Nothing but numbers is recognised here — no power-up names, no spoken
+    // commands. Every non-numeric word this layer accepts is a tripwire that a
+    // misheard answer can trip, and the cost of a false positive (a burnt item,
+    // a game paused mid-run) is far worse than the convenience it buys.
+    // Power-ups now fire on contact, so there is nothing left to say anyway.
 
     if (this.opts.onNoMatch && this.targets.size > 0) {
       const heard = extractNumbers(freshest, { min: 0, max: 9999 })
@@ -360,4 +338,4 @@ function suffixAfter(full: string, prior: string): string | null {
 }
 
 export { isSpeechSupported };
-export type { RecognizerState, VoiceCommand };
+export type { RecognizerState };

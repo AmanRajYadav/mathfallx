@@ -373,12 +373,22 @@ export class Renderer {
     for (const b of game.beams) {
       if (!b.alive) continue;
       const a = Math.max(0, b.life);
-      c.strokeStyle = `hsla(${b.hue},100%,72%,${a})`;
-      c.lineWidth = 2 + a * 5;
       if (this.quality === 'high') {
         c.shadowColor = `hsl(${b.hue},100%,65%)`;
-        c.shadowBlur = 18 * a;
+        c.shadowBlur = 26 * a;
       }
+      // Two passes: a wide coloured shaft and a white-hot core inside it. A
+      // single stroke reads as a line; a cored beam reads as a discharge.
+      c.strokeStyle = `hsla(${b.hue},100%,66%,${a * 0.85})`;
+      c.lineWidth = 4 + a * 11;
+      c.beginPath();
+      c.moveTo(b.x1, b.y1);
+      c.lineTo(b.x2, b.y2);
+      c.stroke();
+
+      c.shadowBlur = 0;
+      c.strokeStyle = `rgba(255,255,255,${a})`;
+      c.lineWidth = 1.5 + a * 3.5;
       c.beginPath();
       c.moveTo(b.x1, b.y1);
       c.lineTo(b.x2, b.y2);

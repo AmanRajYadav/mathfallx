@@ -23,8 +23,10 @@ let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 let musicEl: HTMLAudioElement | null = null;
 let musicSrc = '';
-let sfxVolume = 0.7;
-let musicVolume = 0.35;
+// Effects sat far too quiet against the music — a kill has to be the loudest
+// thing in the mix, because it is the only feedback that the shot connected.
+let sfxVolume = 1;
+let musicVolume = 0.25;
 let noiseBuffer: AudioBuffer | null = null;
 
 /** Vite rewrites this for the GitHub Pages sub-path. */
@@ -41,7 +43,18 @@ export function initAudio(): void {
     ctx = new Ctor();
     master = ctx.createGain();
     master.gain.value = sfxVolume;
-    master.connect(ctx.destination);
+
+    // A compressor lets everything sit much louder without clipping when three
+    // effects land on the same frame — which is exactly when it matters most.
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -18;
+    comp.knee.value = 12;
+    comp.ratio.value = 8;
+    comp.attack.value = 0.002;
+    comp.release.value = 0.14;
+
+    master.connect(comp);
+    comp.connect(ctx.destination);
 
     // One second of white noise, reused by every percussive effect.
     const len = Math.floor(ctx.sampleRate);
@@ -125,10 +138,11 @@ export function playSfx(name: Sfx, intensity = 0): void {
       const step = scale[Math.min(scale.length - 1, intensity % (scale.length * 2))];
       const base = 520 * Math.pow(2, step / 12);
 
-      noise(0.035, 0.34, 9000, 2600);            // crack
-      tone(base * 3.4, base * 0.7, 0.09, 'sawtooth', 0.2);  // body sweep
-      tone(base, base * 1.6, 0.12, 'square', 0.13, 0.012);  // pitched tail
-      noise(0.13, 0.09, 2200, 320, 0.02);        // low thump
+      noise(0.045, 0.85, 9000, 2200);            // crack
+      tone(base * 3.4, base * 0.7, 0.1, 'sawtooth', 0.5);   // body sweep
+      tone(base, base * 1.6, 0.14, 'square', 0.34, 0.012);  // pitched tail
+      tone(base / 2, base * 0.6, 0.16, 'triangle', 0.26, 0.01); // sub weight
+      noise(0.16, 0.3, 2200, 260, 0.02);         // low thump
       break;
     }
     case 'shard':
@@ -141,13 +155,17 @@ export function playSfx(name: Sfx, intensity = 0): void {
       noise(0.07, 0.14, 6000, 1400);
       break;
     case 'explode':
-      noise(0.34, 0.30, 3600, 140);
-      tone(180, 42, 0.3, 'sawtooth', 0.14);
+      noise(0.05, 0.9, 11000, 3000);   // initial crack
+      noise(0.4, 0.7, 3600, 120);      // body
+      tone(200, 38, 0.34, 'sawtooth', 0.42);
+      tone(90, 30, 0.4, 'triangle', 0.3, 0.01);
       break;
     case 'boss':
-      noise(0.6, 0.36, 5000, 90);
-      tone(140, 32, 0.55, 'sawtooth', 0.2);
-      tone(96, 28, 0.6, 'square', 0.12, 0.04);
+      noise(0.07, 1, 12000, 3000);
+      noise(0.7, 0.8, 5000, 70);
+      tone(140, 32, 0.6, 'sawtooth', 0.5);
+      tone(96, 26, 0.7, 'square', 0.34, 0.04);
+      tone(60, 24, 0.8, 'triangle', 0.3, 0.06);
       break;
     case 'armor':
       tone(330, 250, 0.09, 'square', 0.12);

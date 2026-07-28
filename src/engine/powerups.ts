@@ -1,16 +1,24 @@
 /**
- * Power-ups, activated by voice.
+ * Power-ups. They fly to the ship and fire on contact — no input at all.
  *
- * The interesting design constraint: in a game whose only input is speech,
- * a power-up you collect by *steering* into it would force a second, competing
- * control scheme. The old build did exactly that — an arrow-key-driven rocket
- * chasing falling tokens — which works on a keyboard and is unusable while
- * you are busy saying "fifty six" on a phone.
+ * This went through two earlier designs, both worse.
  *
- * So pickups fly to the ship automatically, and the skill is in *when you
- * spend them*: you shout "FREEZE" the moment the screen gets away from you.
- * That keeps voice as the single input and turns the power-up into a second
- * vocabulary the player learns, rather than a distraction from the first.
+ * The original had you *steer* a rocket into falling tokens with arrow keys.
+ * In a game whose only input is speech that is a second, competing control
+ * scheme: fine on a keyboard, unusable while you are mid-"fifty six" on a
+ * phone.
+ *
+ * The replacement made you *spend* them by shouting their name. That reads
+ * well on paper and fails in practice, because it puts non-numeric words into
+ * a recogniser that is otherwise only ever hearing numbers. "Slow" and "low",
+ * "stop" and "freeze", "double" and "bubble" all become live tripwires, and
+ * every false positive burns an item you were saving. It also asks the player
+ * to make a tactical decision precisely when the screen is getting away from
+ * them — and by the time they have decided, the block has landed.
+ *
+ * So: collection and activation are both automatic. The reward for playing
+ * well is simply that good things happen faster, and voice goes back to
+ * hearing nothing but numbers.
  */
 
 export type PowerUpType = 'freeze' | 'slow' | 'nuke' | 'shield' | 'double';
@@ -74,7 +82,7 @@ export const POWER_UPS: Record<PowerUpType, PowerUpDef> = {
     duration: 0,
     blurb: 'Clears the screen',
     key: 'n',
-    auto: false,
+    auto: true,
     spoken: ['nuke', 'nuk', 'newk', 'bomb', 'blast', 'boom', 'nook'],
   },
   shield: {
@@ -96,7 +104,7 @@ export const POWER_UPS: Record<PowerUpType, PowerUpDef> = {
     duration: 10,
     blurb: 'Double score for 10s',
     key: 'd',
-    auto: false,
+    auto: true,
     spoken: ['double', 'dubble', 'doubles', 'twice', 'bubble'],
   },
 };

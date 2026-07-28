@@ -145,25 +145,24 @@ check('"I need a shield now" -> null', matchPowerUpPhrase('I need a shield now')
 check('"seventy" -> null', matchPowerUpPhrase('seventy') === null);
 check('"" -> null', matchPowerUpPhrase('') === null);
 
-// A power-up name must reach onPowerUp, not be swallowed as a number.
+/**
+ * Voice must hear numbers and nothing else.
+ *
+ * Power-ups fire on contact now, so the recogniser has no reason to accept
+ * non-numeric words — and every one it accepted was a tripwire a misheard
+ * answer could trip. matchPowerUpPhrase still exists for the HUD labels, but
+ * nothing in the voice path calls it.
+ */
 {
-  let fired = null;
-  const vi = new VoiceInput({ adapter: stubAdapter(), onPowerUp: (p) => { fired = p; } });
+  const numbers = [];
+  const vi = new VoiceInput({ adapter: stubAdapter(), onMatch: (m) => numbers.push(m.value) });
   vi.setEnabled(true);
-  vi.setTargets([42, 8]);
-  vi.simulate('freeze', true);
-  check('"freeze" routes to onPowerUp', fired === 'freeze', `got ${fired}`);
-}
-
-// ...and must not re-fire from the accumulated transcript of one utterance.
-{
-  const fired = [];
-  const vi = new VoiceInput({ adapter: stubAdapter(), onPowerUp: (p) => fired.push(p) });
-  vi.setEnabled(true);
-  vi.setTargets([42]);
-  vi.handle({ transcript: 'freeze', alternatives: ['freeze'], isFinal: true, utteranceId: 'p1', at: Date.now() });
-  vi.handle({ transcript: 'freeze', alternatives: ['freeze'], isFinal: true, utteranceId: 'p1', at: Date.now() });
-  check('power-up does not re-fire on the same utterance', fired.length === 1, `fired ${fired.length}x`);
+  vi.setTargets([42, 8, 2]);
+  for (const word of ['freeze', 'nuke', 'slow', 'shield', 'double', 'pause', 'stop']) {
+    vi.simulate(word, true);
+  }
+  check('spoken power-up and command words are ignored entirely',
+    numbers.length === 0, `fired ${JSON.stringify(numbers)}`);
 }
 
 console.log('— commands —');

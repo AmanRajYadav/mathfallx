@@ -95,18 +95,6 @@ const MathFallGame: React.FC = () => {
         missTimer = window.setTimeout(() => setVoiceUi((v) => ({ ...v, miss: null })), 2200);
       },
       onState: (state) => setVoiceUi((v) => (v.state === state ? v : { ...v, state })),
-      onCommand: (cmd) => {
-        const g = gameRef.current;
-        if (!g) return;
-        if (cmd === 'pause' && g.status === 'playing') { g.pause(); setScreenBoth('paused'); }
-        else if (cmd === 'resume' && g.status === 'paused') { g.resume(); setScreenBoth('playing'); }
-        else if (cmd === 'bomb') g.triggerOverdrive();
-      },
-      onPowerUp: (power) => {
-        const g = gameRef.current;
-        if (!g || g.status !== 'playing') return;
-        g.activate(power);
-      },
     });
     voiceRef.current = voice;
     setVoiceUi((v) => ({ ...v, supported: voice.supported }));

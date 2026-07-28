@@ -211,9 +211,23 @@ export interface ModeConfig {
   speed: number;
   /** Blocks on screen at once, at wave 1. */
   concurrency: number;
+  /** Hard ceiling on any answer. Overrides the rating-based default. */
+  maxAnswer?: number;
+  /** Caps the difficulty the adaptive engine is allowed to request. */
+  ratingCap?: number;
+  /** Suppresses the harder block kinds. */
+  plainBlocksOnly?: boolean;
 }
 
 export const MODES: Record<GameMode, ModeConfig> = {
+  // Easy is a genuine floor, not just a slower arcade: answers stay under 20,
+  // which keeps every one of them a single spoken word. Compound numbers are
+  // where both the arithmetic and the speech recognition get hard, so removing
+  // them removes two difficulties at once.
+  easy: {
+    mode: 'easy', shield: 5, duration: null, total: null, speed: 0.7, concurrency: 3,
+    maxAnswer: 20, ratingCap: 900, plainBlocksOnly: true,
+  },
   arcade: { mode: 'arcade', shield: 3, duration: null, total: null, speed: 1, concurrency: 3 },
   daily: { mode: 'daily', shield: 3, duration: null, total: 40, speed: 1, concurrency: 3 },
   blitz: { mode: 'blitz', shield: 99, duration: 60, total: null, speed: 1.1, concurrency: 4 },
@@ -837,22 +851,26 @@ export class GameCore {
 
       const fast = srt > 0.55;
       this.overdrive = Math.min(1, this.overdrive + (fast ? 0.14 : 0.08));
+      void fast;
 
       const cx = block.x;
       const cy = block.y + block.h / 2;
       const heavy = block.kind === 'boss';
 
       this.fireBeam(block);
-      this.burst(cx, cy, heavy ? 48 : block.kind === 'armored' ? 32 : 24, block.hue, heavy ? 1.5 : 1);
-      this.ring(cx, cy, heavy ? 190 : 110, block.hue, heavy ? 5 : 3);
-      if (heavy) this.ring(cx, cy, 280, 45, 2);
+      // Every kill gets a real explosion, not just the rare ones. Destroying a
+      // block is the single most repeated action in the game — if it does not
+      // land, nothing does.
+      this.burst(cx, cy, heavy ? 70 : block.kind === 'armored' ? 52 : 42, block.hue, heavy ? 1.9 : 1.35);
+      this.ring(cx, cy, heavy ? 230 : 165, block.hue, heavy ? 7 : 5);
+      this.ring(cx, cy, heavy ? 320 : 90, heavy ? 45 : block.hue, heavy ? 3 : 2);
+      this.flash = Math.max(this.flash, heavy ? 0.5 : 0.22);
 
-      // Kick the camera away from the impact, and stop time briefly on a heavy
-      // kill — a few frames of stillness sell weight better than more particles.
-      this.applyShake(heavy ? 16 : block.kind === 'armored' ? 9 : 5,
+      // Kick the camera away from the impact, and stop time briefly — a few
+      // frames of stillness sell weight better than more particles.
+      this.applyShake(heavy ? 22 : block.kind === 'armored' ? 14 : 9,
         cx - this.width / 2, cy - this.playBottom);
-      if (heavy) this.hitStop = 110;
-      else if (this.combo > 0 && this.combo % 10 === 0) this.hitStop = 55;
+      this.hitStop = heavy ? 130 : fast ? 45 : 32;
 
       this.addPopup(cx, block.y, `+${gain}`, block.hue, heavy || fast);
       this.dropFor(block);
@@ -916,9 +934,16 @@ export class GameCore {
       return item;
     }
 
-    const base = overrideTarget ?? targetDifficulty(this.profile.theta);
+    let base = overrideTarget ?? targetDifficulty(this.profile.theta);
     const jitter = this.rng.gaussian(0, 90);
-    const waveLift = Math.min(220, (this.wave - 1) * 22);
+    let waveLift = Math.min(220, (this.wave - 1) * 22);
+
+    // Easy mode ignores a high rating on purpose. Someone who wants small
+    // numbers wants small numbers, not the difficulty their history earned.
+    if (this.config.ratingCap !== undefined) {
+      base = Math.min(base, this.config.ratingCap);
+      waveLift = Math.min(waveLift, 80);
+    }
 
     let skills = this.config.skills;
     if (!skills && this.rng.chance(0.3)) {
@@ -937,11 +962,12 @@ export class GameCore {
       exclude,
       // Three-digit answers are a mouthful mid-arcade, so keep them rare and
       // only once the player has earned them.
-      maxAnswer: this.profile.theta > 1500 ? 999 : 200,
+      maxAnswer: this.config.maxAnswer ?? (this.profile.theta > 1500 ? 999 : 200),
     });
   }
 
   private pickKind(): BlockKind {
+    if (this.config.plainBlocksOnly) return 'normal';
     if (this.wave >= 5 && this.rng.chance(0.06)) return 'boss';
     if (this.wave >= 3 && this.rng.chance(0.12)) return 'armored';
     if (this.wave >= 2 && this.rng.chance(0.16)) return 'fast';
@@ -1194,7 +1220,9 @@ export class GameCore {
     }
     for (const b of this.beams) {
       if (!b.alive) continue;
-      b.life -= dt * 5.2;
+      // Slower fade: the old beam was gone in under 200ms, which on a desktop
+      // frame budget meant it could be missed entirely.
+      b.life -= dt * 3.4;
       if (b.life <= 0) b.alive = false;
     }
     for (const p of this.popups) {

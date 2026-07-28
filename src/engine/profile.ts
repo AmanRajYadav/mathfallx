@@ -20,7 +20,7 @@ const KEY = 'mathfall.profile.v2';
 const LEGACY_KEY = 'mathfall-statistics';
 const MAX_QUEUE = 400;
 
-export type GameMode = 'arcade' | 'daily' | 'blitz' | 'zen';
+export type GameMode = 'easy' | 'arcade' | 'daily' | 'blitz' | 'zen';
 
 export interface Settings {
   voiceEnabled: boolean;
@@ -109,7 +109,13 @@ export function defaultProfile(): Profile {
     residuals: [],
     templateRatings: {},
     skills: {},
-    modes: { arcade: emptyModeRecord(), daily: emptyModeRecord(), blitz: emptyModeRecord(), zen: emptyModeRecord() },
+    modes: {
+      easy: emptyModeRecord(),
+      arcade: emptyModeRecord(),
+      daily: emptyModeRecord(),
+      blitz: emptyModeRecord(),
+      zen: emptyModeRecord(),
+    },
     daily: {},
     totalPlayMs: 0,
     voiceAnswers: 0,

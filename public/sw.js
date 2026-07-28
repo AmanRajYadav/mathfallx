@@ -68,12 +68,17 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Music: large, and only worth storing once actually played.
+  //
+  // Audio elements issue Range requests, which come back as 206 Partial
+  // Content. Cache.put() rejects those outright — a partial body is not a
+  // valid cache entry — so a naive `response.ok` check (206 is "ok") throws
+  // an unhandled rejection on every seek. Only whole 200 responses are stored.
   if (url.pathname.includes('/audio/')) {
     event.respondWith(
       caches.match(request).then((hit) => hit ?? fetch(request).then((response) => {
-        if (response.ok) {
+        if (response.status === 200 && response.type === 'basic') {
           const copy = response.clone();
-          void caches.open(MEDIA).then((c) => c.put(request, copy));
+          void caches.open(MEDIA).then((c) => c.put(request, copy)).catch(() => undefined);
         }
         return response;
       })),
@@ -86,9 +91,10 @@ self.addEventListener('fetch', (event) => {
     caches.match(request).then((hit) => {
       const network = fetch(request)
         .then((response) => {
-          if (response.ok) {
+          // Same rule as above: only complete, same-origin 200s are cacheable.
+          if (response.status === 200 && response.type === 'basic') {
             const copy = response.clone();
-            void caches.open(ASSETS).then((c) => c.put(request, copy));
+            void caches.open(ASSETS).then((c) => c.put(request, copy)).catch(() => undefined);
           }
           return response;
         })
