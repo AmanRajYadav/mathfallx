@@ -391,6 +391,94 @@
   letter-spacing: 0.06em;
 }
 
+/* Leaderboard */
+.mf-board {
+  display: flex;
+  flex-direction: column;
+  border-radius: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 8, 26, 0.7);
+  overflow: hidden;
+}
+
+.mf-board-row {
+  display: grid;
+  grid-template-columns: 30px 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 14px;
+}
+
+.mf-board-row:last-child { border-bottom: 0; }
+
+.mf-board-row--me {
+  background: rgba(0, 240, 255, 0.1);
+  box-shadow: inset 2px 0 0 #00f0ff;
+}
+
+.mf-board-rank {
+  font-size: 12px;
+  font-weight: 900;
+  color: rgba(234, 230, 255, 0.4);
+  font-variant-numeric: tabular-nums;
+}
+
+.mf-board-row:nth-child(1) .mf-board-rank { color: #ffe66d; }
+.mf-board-row:nth-child(2) .mf-board-rank { color: #d8dbe6; }
+.mf-board-row:nth-child(3) .mf-board-rank { color: #e0a172; }
+
+.mf-board-name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-board-meta {
+  font-size: 11px;
+  color: rgba(234, 230, 255, 0.4);
+  font-variant-numeric: tabular-nums;
+}
+
+.mf-board-score {
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+/* Pause / Menu. Deliberately small and low-contrast — always reachable, never
+   competing with the keypad for attention or thumb space. */
+.mf-nav {
+  display: flex;
+  gap: 6px;
+}
+
+.mf-nav-btn {
+  flex: 1;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(234, 230, 255, 0.7);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mf-nav-btn:active {
+  transform: scale(0.97);
+  background: rgba(255, 255, 255, 0.1);
+}
+
 /* The typed entry, shown inline in the voice row. */
 .mf-voice-body--entry {
   border: 0;

@@ -37,11 +37,11 @@ export interface PowerUpDef {
   /**
    * Fires the instant it is collected, with no player action.
    *
-   * Reserved for the purely defensive ones. When the screen is already getting
-   * away from you, the last thing that helps is a decision to make — and by
-   * the time you have decided, the block has landed. The tactical power-ups
-   * (nuke, double) stay manual, because spending those at the right moment is
-   * the whole point of holding them.
+   * Currently false for everything: power-ups dock either side of the ship and
+   * wait to be tapped. Holding them puts the timing decision back in the
+   * player's hands, which is the interesting choice — the cost is that a
+   * panicking player may not spend them in time. Flipping any of these to true
+   * makes that one fire on pickup instead.
    */
   auto: boolean;
   /**
@@ -60,7 +60,7 @@ export const POWER_UPS: Record<PowerUpType, PowerUpDef> = {
     duration: 4,
     blurb: 'Everything stops for 4s',
     key: 'f',
-    auto: true,
+    auto: false,
     spoken: ['freeze', 'frees', 'freezing', 'ice', 'stop', 'frieze'],
   },
   slow: {
@@ -71,7 +71,7 @@ export const POWER_UPS: Record<PowerUpType, PowerUpDef> = {
     duration: 7,
     blurb: 'Half speed for 7s',
     key: 's',
-    auto: true,
+    auto: false,
     spoken: ['slow', 'slower', 'slow motion', 'slowmo', 'slow', 'low'],
   },
   nuke: {
@@ -82,7 +82,7 @@ export const POWER_UPS: Record<PowerUpType, PowerUpDef> = {
     duration: 0,
     blurb: 'Clears the screen',
     key: 'n',
-    auto: true,
+    auto: false,
     spoken: ['nuke', 'nuk', 'newk', 'bomb', 'blast', 'boom', 'nook'],
   },
   shield: {
@@ -93,7 +93,7 @@ export const POWER_UPS: Record<PowerUpType, PowerUpDef> = {
     duration: 0,
     blurb: 'Restores one shield',
     key: 'h',
-    auto: true,
+    auto: false,
     spoken: ['shield', 'shields', 'sheild', 'guard', 'armor', 'armour', 'shed'],
   },
   double: {
@@ -104,7 +104,7 @@ export const POWER_UPS: Record<PowerUpType, PowerUpDef> = {
     duration: 10,
     blurb: 'Double score for 10s',
     key: 'd',
-    auto: true,
+    auto: false,
     spoken: ['double', 'dubble', 'doubles', 'twice', 'bubble'],
   },
 };

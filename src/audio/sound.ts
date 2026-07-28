@@ -248,11 +248,82 @@ export function musicForWave(wave: number): Track {
   return 'play';
 }
 
-export function vibrate(pattern: number | number[]): void {
-  if (typeof navigator === 'undefined' || !('vibrate' in navigator)) return;
+/**
+ * Haptics.
+ *
+ * iOS Safari does not implement the Vibration API — `navigator.vibrate` is
+ * absent entirely, so every call was a silent no-op on iPhone, installed to the
+ * home screen or not.
+ *
+ * The one route Apple does expose to the Taptic engine from the web is the
+ * switch-style checkbox introduced in iOS 17.4: toggling one produces a real
+ * haptic tap. It is a single fixed intensity with no pattern control, so a
+ * "heavy" hit is approximated by firing it a few times in quick succession.
+ * Crude, but the difference between something and nothing.
+ */
+let hapticSwitch: HTMLLabelElement | null = null;
+
+function iosHapticElement(): HTMLLabelElement | null {
+  if (hapticSwitch) return hapticSwitch;
+  if (typeof document === 'undefined') return null;
   try {
-    navigator.vibrate(pattern);
+    const label = document.createElement('label');
+    label.setAttribute('aria-hidden', 'true');
+    // Must remain in the layout for the toggle to register, so it is hidden by
+    // size and opacity rather than display:none.
+    label.style.cssText =
+      'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none;z-index:-1';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.setAttribute('switch', '');
+    label.appendChild(input);
+    document.body.appendChild(label);
+    hapticSwitch = label;
+    return label;
   } catch {
-    /* unsupported or blocked by user settings */
+    return null;
   }
+}
+
+function isIos(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  // iPadOS 13+ reports as a Mac, so the touch-point check is what catches it.
+  return /iPad|iPhone|iPod/.test(ua) ||
+    (ua.includes('Macintosh') && navigator.maxTouchPoints > 1);
+}
+
+export function vibrate(pattern: number | number[]): void {
+  if (typeof navigator === 'undefined') return;
+
+  if ('vibrate' in navigator) {
+    try {
+      navigator.vibrate(pattern);
+      return;
+    } catch {
+      /* fall through to the iOS path */
+    }
+  }
+
+  if (!isIos()) return;
+  const el = iosHapticElement();
+  if (!el) return;
+
+  // Approximate strength by count: a pattern array means something heavier
+  // happened, so tap more than once.
+  const taps = Array.isArray(pattern)
+    ? Math.min(3, Math.ceil(pattern.length / 2))
+    : pattern >= 40 ? 3 : pattern >= 20 ? 2 : 1;
+
+  for (let i = 0; i < taps; i++) {
+    window.setTimeout(() => {
+      try { el.click(); } catch { /* ignore */ }
+    }, i * 55);
+  }
+}
+
+/** True when haptics can actually do something on this device. */
+export function hapticsSupported(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return 'vibrate' in navigator || isIos();
 }

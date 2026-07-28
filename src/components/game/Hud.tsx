@@ -69,24 +69,10 @@ const Hud: React.FC<Props> = ({ hud, hudRef, onActivate }) => {
         <i style={{ width: `${Math.round(hud.overdrive * 100)}%` }} />
       </div>
 
-      {(hud.inventory.length > 0 || hud.activeEffects.length > 0) && (
+      {/* Held power-ups are drawn on the canvas beside the ship and tapped
+          there. Only what is currently *running* needs a HUD readout. */}
+      {hud.activeEffects.length > 0 && (
         <div className="mf-powers">
-          {hud.inventory.map((type, i) => {
-            const def = POWER_UPS[type];
-            return (
-              <button
-                key={`${type}-${i}`}
-                type="button"
-                className="mf-power"
-                style={{ '--pw': `hsl(${def.hue},100%,64%)` } as React.CSSProperties}
-                onPointerDown={(e) => { e.preventDefault(); onActivate(type); }}
-                aria-label={`Use ${def.label}: ${def.blurb}. Or say "${def.label.toLowerCase()}".`}
-              >
-                <span className="mf-power-icon">{def.icon}</span>
-                <span className="mf-power-label">{def.label}</span>
-              </button>
-            );
-          })}
           {hud.activeEffects.map((e) => {
             const def = POWER_UPS[e.type];
             return (

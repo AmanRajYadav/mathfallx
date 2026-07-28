@@ -1527,6 +1527,33 @@ export class GameCore {
     });
   }
 
+  /**
+   * Screen positions of the docked power-ups, alternating left and right of
+   * the ship. The renderer draws them here and the shell hit-tests taps
+   * against the same list, so the two can never drift apart.
+   */
+  powerSlots(): Array<{ type: PowerUpType; x: number; y: number; r: number }> {
+    const cx = this.width / 2;
+    const cy = this.playBottom - 20;
+    const gap = 34;
+    return this.inventory.map((type, i) => {
+      const rank = Math.floor(i / 2) + 1;
+      const side = i % 2 === 0 ? -1 : 1;
+      return { type, x: cx + side * (gap + (rank - 1) * 30), y: cy, r: 17 };
+    });
+  }
+
+  /** Activates whichever docked power-up was tapped, if any. */
+  activateAt(x: number, y: number): boolean {
+    for (const slot of this.powerSlots()) {
+      // Generous radius: these are small targets next to a thumb.
+      if (Math.hypot(x - slot.x, y - slot.y) <= slot.r + 12) {
+        return this.activate(slot.type);
+      }
+    }
+    return false;
+  }
+
   /** Live answers, for anything that needs to bias itself toward them. */
   liveAnswers(): number[] {
     const out: number[] = [];

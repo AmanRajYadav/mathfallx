@@ -15,8 +15,10 @@ import {
 import Hud from './Hud';
 import Controls, { type VoiceUiState } from './Controls';
 import {
-  GameOverScreen, PauseScreen, SettingsScreen, StatsScreen, TitleScreen, type Screen,
+  GameOverScreen, LeaderboardScreen, PauseScreen, SettingsScreen, StatsScreen,
+  TitleScreen, type Screen, type SubmitState,
 } from './Overlays';
+import { submitScore } from '../../net/leaderboard';
 import '../../styles/game.css';
 
 const EMPTY_HUD: HudState = {
@@ -327,6 +329,7 @@ const MathFallGame: React.FC = () => {
     inputRef.current = '';
     setInput('');
     setSummary(null);
+    setSubmitState('idle');
     setVoiceUi((v) => ({ ...v, heard: '', lastMatch: null, lastMatchAt: 0, miss: null }));
     setScreenBoth('playing');
     game.start(mode, skills);
@@ -437,6 +440,19 @@ const MathFallGame: React.FC = () => {
     initAudio();
     const voice = voiceRef.current;
     if (!voice?.supported) return;
+
+    // When permission was refused, the obvious gesture is to tap the mic again
+    // after granting it in system settings. Toggling *off* at that point — which
+    // is what a plain toggle does, since it is still nominally enabled — leaves
+    // no way back in. Treat a tap in that state as "try again".
+    if (voiceUi.state === 'denied' || voiceUi.state === 'error') {
+      voice.restart();
+      voice.setEnabled(screenRef.current === 'playing');
+      setVoiceUi((v) => ({ ...v, enabled: true }));
+      playSfx('ui');
+      return;
+    }
+
     const next = !voiceUi.enabled;
     const profile = profileRef.current;
     profile.settings.voiceEnabled = next;
@@ -446,7 +462,7 @@ const MathFallGame: React.FC = () => {
     setVoiceUi((v) => ({ ...v, enabled: next }));
     if (!next) setKeypadOpen(true);
     playSfx('ui');
-  }, [voiceUi.enabled]);
+  }, [voiceUi.enabled, voiceUi.state]);
 
   // Desktop keyboard.
   useEffect(() => {
@@ -570,6 +586,35 @@ const MathFallGame: React.FC = () => {
   }, [bumpProfile]);
 
   const [testResult, setTestResult] = useState('');
+  const [boardName, setBoardName] = useState(() => profileRef.current.name);
+  const [boardMode, setBoardMode] = useState<GameMode>('arcade');
+  const [submitState, setSubmitState] = useState<SubmitState>('idle');
+
+  const submitRun = useCallback(() => {
+    const s = summary;
+    const name = boardName.trim();
+    if (!s || !name) return;
+
+    // Remember the name so it is only ever typed once.
+    profileRef.current.name = name;
+    saveProfile(profileRef.current);
+
+    setSubmitState('sending');
+    void submitScore({
+      name,
+      score: s.score,
+      mode: s.mode,
+      wave: hud.wave,
+      solved: s.solved,
+      accuracy: s.accuracy,
+      bestCombo: s.bestCombo,
+      rating: s.ratingAfter,
+      voiceShare: s.voiceShare,
+    }).then((ok) => {
+      setSubmitState(ok ? 'done' : 'failed');
+      if (ok) { setBoardMode(s.mode); playSfx('wave'); }
+    });
+  }, [summary, boardName, hud.wave]);
 
   const testVoice = useCallback((phrase: string) => {
     const voice = voiceRef.current;
@@ -602,7 +647,21 @@ const MathFallGame: React.FC = () => {
 
   return (
     <div className="mf-root" ref={rootRef}>
-      <canvas className="mf-canvas" ref={canvasRef} />
+      <canvas
+        className="mf-canvas"
+        ref={canvasRef}
+        onPointerDown={(e) => {
+          const g = gameRef.current;
+          if (!g || g.status !== 'playing') return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          // Canvas coordinates are CSS pixels from the element's top-left,
+          // which is exactly the space powerSlots() reports in.
+          if (g.activateAt(e.clientX - rect.left, e.clientY - rect.top)) {
+            initAudio();
+            e.preventDefault();
+          }
+        }}
+      />
       <div className="mf-crt" />
 
       {(screen === 'playing' || screen === 'paused') && (
@@ -620,6 +679,8 @@ const MathFallGame: React.FC = () => {
             onToggleKeypad={() => setKeypadOpen((v) => !v)}
             input={input}
             onKey={handleKey}
+            onPause={pauseGame}
+            onMenu={goMenu}
           />
         </>
       )}
@@ -646,8 +707,21 @@ const MathFallGame: React.FC = () => {
         <GameOverScreen
           summary={summary}
           profile={profile}
+          name={boardName}
+          submitState={submitState}
+          onName={setBoardName}
+          onSubmit={submitRun}
+          onViewBoard={() => { setBoardMode(summary.mode); setScreenBoth('board'); }}
           onAgain={() => startGame(summary.mode)}
           onMenu={goMenu}
+        />
+      )}
+
+      {screen === 'board' && (
+        <LeaderboardScreen
+          mode={boardMode}
+          onMode={setBoardMode}
+          onBack={() => setScreenBoth(summary ? 'over' : 'title')}
         />
       )}
 

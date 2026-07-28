@@ -121,97 +121,92 @@ export class Renderer {
     }
   }
 
-  /** Draws the static half of the scene once per resize. */
+  /**
+   * Draws the static half of the scene once per resize.
+   *
+   * This replaced a literal 80s retrowave backdrop — chrome sun, jagged
+   * mountains, hot magenta grid. It looked the part but actively fought the
+   * game: the sun sat exactly where blocks fall, at the highest contrast on
+   * screen, so equations were read against a bright orange disc. The palette
+   * also used the same pinks and cyans as the blocks themselves, which is
+   * precisely backwards — the background should be the quietest thing in the
+   * frame.
+   *
+   * What is here now is closer to modern dark UI: a near-black base, a few very
+   * large soft colour fields drifting behind everything, and a fine grain to
+   * stop the gradients banding. Depth without detail, and nothing that competes
+   * for attention with a falling number.
+   */
   private paintBackdrop(): void {
     const c = this.bgCtx;
-    const { w, h, horizonY } = this;
+    const { w, h } = this;
     c.clearRect(0, 0, w, h);
 
-    // Sky.
-    const sky = c.createLinearGradient(0, 0, 0, horizonY);
-    sky.addColorStop(0, '#07021a');
-    sky.addColorStop(0.45, '#160a3d');
-    sky.addColorStop(0.8, '#4a1163');
-    sky.addColorStop(1, '#8f1f66');
-    c.fillStyle = sky;
-    c.fillRect(0, 0, w, horizonY);
+    // Base.
+    const base = c.createLinearGradient(0, 0, 0, h);
+    base.addColorStop(0, '#080b1a');
+    base.addColorStop(0.55, '#0a0a18');
+    base.addColorStop(1, '#050509');
+    c.fillStyle = base;
+    c.fillRect(0, 0, w, h);
 
-    // Ground.
-    const ground = c.createLinearGradient(0, horizonY, 0, h);
-    ground.addColorStop(0, '#1b0533');
-    ground.addColorStop(1, '#05010f');
-    c.fillStyle = ground;
-    c.fillRect(0, horizonY, w, h - horizonY);
+    // Aurora fields. Large, low-opacity, well outside the play area's centre
+    // so the middle of the screen stays the darkest part of the frame.
+    const orbs: Array<[number, number, number, string]> = [
+      [0.18, 0.12, 0.85, 'rgba(88,101,242,0.30)'],   // indigo, top left
+      [0.88, 0.26, 0.72, 'rgba(0,209,178,0.20)'],    // teal, upper right
+      [0.62, 0.86, 0.95, 'rgba(168,85,247,0.24)'],   // violet, lower right
+      [0.08, 0.78, 0.70, 'rgba(236,72,153,0.14)'],   // rose, lower left
+    ];
 
-    // The sun, with horizontal cutouts widening toward the base.
-    const sunR = Math.min(w * 0.34, horizonY * 0.52);
-    const sunCx = w / 2;
-    const sunCy = horizonY - sunR * 0.12;
-
-    c.save();
-    c.beginPath();
-    c.arc(sunCx, sunCy, sunR, 0, Math.PI * 2);
-    c.clip();
-
-    const sunGrad = c.createLinearGradient(0, sunCy - sunR, 0, sunCy + sunR);
-    sunGrad.addColorStop(0, '#ffe66d');
-    sunGrad.addColorStop(0.42, '#ff9f45');
-    sunGrad.addColorStop(0.75, '#ff2d95');
-    sunGrad.addColorStop(1, '#c01a86');
-    c.fillStyle = sunGrad;
-    c.fillRect(sunCx - sunR, sunCy - sunR, sunR * 2, sunR * 2);
-
-    c.globalCompositeOperation = 'destination-out';
-    let y = sunCy + sunR * 0.08;
-    let gap = sunR * 0.045;
-    while (y < sunCy + sunR) {
-      c.fillRect(sunCx - sunR, y, sunR * 2, gap);
-      y += gap + sunR * 0.075;
-      gap *= 1.28;
+    c.globalCompositeOperation = 'lighter';
+    for (const [fx, fy, fr, colour] of orbs) {
+      const cx = w * fx;
+      const cy = h * fy;
+      const r = Math.max(w, h) * fr * 0.55;
+      const g = c.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, colour);
+      g.addColorStop(0.55, colour.replace(/[\d.]+\)$/, '0.06)'));
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      c.fillStyle = g;
+      c.fillRect(0, 0, w, h);
     }
-    c.restore();
+    c.globalCompositeOperation = 'source-over';
 
-    // Horizon bloom.
-    const glow = c.createLinearGradient(0, horizonY - 60, 0, horizonY + 24);
-    glow.addColorStop(0, 'rgba(255,45,149,0)');
-    glow.addColorStop(0.7, 'rgba(255,45,149,0.28)');
-    glow.addColorStop(1, 'rgba(0,240,255,0.30)');
-    c.fillStyle = glow;
-    c.fillRect(0, horizonY - 60, w, 84);
-
-    this.paintMountains(c, horizonY);
-
-    c.fillStyle = '#00f0ff';
-    c.fillRect(0, horizonY - 1, w, 2);
+    this.paintGrain(c);
   }
 
-  private paintMountains(c: CanvasRenderingContext2D, horizonY: number): void {
-    const { w } = this;
-    const ranges: Array<[number, number, string]> = [
-      [0.16, 58, 'rgba(28,7,58,0.95)'],
-      [0.11, 40, 'rgba(52,12,86,0.9)'],
-    ];
-    for (const [scale, seedStep, fill] of ranges) {
-      c.beginPath();
-      c.moveTo(0, horizonY);
-      const peakH = this.h * scale;
-      let x = 0;
-      let i = 0;
-      while (x < w + seedStep) {
-        // Deterministic zig-zag: a fixed trig mix, so the skyline is stable
-        // across resizes instead of reshuffling every rotation.
-        const t = i * 1.7;
-        const height = peakH * (0.45 + 0.55 * Math.abs(Math.sin(t) * Math.cos(t * 0.6)));
-        c.lineTo(x + seedStep / 2, horizonY - height);
-        c.lineTo(x + seedStep, horizonY);
-        x += seedStep;
-        i++;
-      }
-      c.lineTo(w, horizonY);
-      c.closePath();
-      c.fillStyle = fill;
-      c.fill();
+  /**
+   * Fine monochrome grain.
+   *
+   * Large flat gradients band badly on 8-bit displays, especially the dark
+   * ones this palette is built from. A little noise dithers the steps away and
+   * gives the whole thing texture. Baked into the static layer, so it costs
+   * nothing per frame.
+   */
+  private paintGrain(c: CanvasRenderingContext2D): void {
+    const { w, h } = this;
+    const tile = 128;
+    const noise = document.createElement('canvas');
+    noise.width = tile;
+    noise.height = tile;
+    const nc = noise.getContext('2d');
+    if (!nc) return;
+
+    const img = nc.createImageData(tile, tile);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = 128 + (Math.random() - 0.5) * 255;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+      img.data[i + 3] = 10;
     }
+    nc.putImageData(img, 0, 0);
+
+    const pattern = c.createPattern(noise, 'repeat');
+    if (!pattern) return;
+    c.globalCompositeOperation = 'overlay';
+    c.fillStyle = pattern;
+    c.fillRect(0, 0, w, h);
+    c.globalCompositeOperation = 'source-over';
   }
 
   // --------------------------------------------------------------------- draw
@@ -251,6 +246,7 @@ export class Renderer {
     this.drawParticles(game);
     this.drawPickups(game);
     this.drawShip(game);
+    this.drawPowerSlots(game);
     this.drawPopups(game);
 
     c.restore();
@@ -298,11 +294,18 @@ export class Renderer {
     c.restore();
   }
 
-  /** Perspective floor grid, scrolling toward the viewer. */
+  /**
+   * Perspective floor, scrolling toward the viewer.
+   *
+   * Kept, because the motion is what gives the scene depth and a sense of
+   * travel — but pulled right down in contrast and desaturated to near-white.
+   * The old hot cyan and magenta lines were the same colours as the blocks, so
+   * the eye had to work to separate foreground from background.
+   */
   private drawGrid(game: GameCore, dt: number): void {
     const c = this.ctx;
     const { w, h, horizonY } = this;
-    const speed = game.overdriveActive() ? 0.55 : 0.22;
+    const speed = game.overdriveActive() ? 0.5 : 0.2;
     this.gridScroll = (this.gridScroll + (dt / 1000) * speed) % 1;
 
     const depth = h - horizonY;
@@ -311,24 +314,21 @@ export class Renderer {
     c.save();
     c.lineWidth = 1;
 
-    // Receding horizontals. The exponent is what sells the perspective.
-    const rows = this.quality === 'low' ? 12 : 18;
+    const rows = this.quality === 'low' ? 10 : 15;
     for (let i = 0; i < rows; i++) {
       const t = (i + this.gridScroll) / rows;
       const y = horizonY + depth * Math.pow(t, 2.4);
-      const alpha = 0.10 + t * 0.5;
-      c.strokeStyle = `rgba(0,240,255,${alpha})`;
+      c.strokeStyle = `rgba(150,175,255,${0.03 + t * 0.16})`;
       c.beginPath();
       c.moveTo(0, y);
       c.lineTo(w, y);
       c.stroke();
     }
 
-    // Verticals fanning out from the vanishing point.
-    const cols = this.quality === 'low' ? 11 : 17;
+    const cols = this.quality === 'low' ? 9 : 13;
     const cx = w / 2;
     const spread = w * 1.9;
-    c.strokeStyle = 'rgba(255,45,149,0.30)';
+    c.strokeStyle = 'rgba(150,175,255,0.09)';
     c.beginPath();
     for (let i = 0; i <= cols; i++) {
       const t = i / cols - 0.5;
@@ -336,6 +336,15 @@ export class Renderer {
       c.lineTo(cx + t * spread, h);
     }
     c.stroke();
+
+    // A single soft horizon band in place of the old hard neon line.
+    const band = c.createLinearGradient(0, horizonY - 40, 0, horizonY + 40);
+    band.addColorStop(0, 'rgba(120,150,255,0)');
+    band.addColorStop(0.5, 'rgba(140,170,255,0.10)');
+    band.addColorStop(1, 'rgba(120,150,255,0)');
+    c.fillStyle = band;
+    c.fillRect(0, horizonY - 40, w, 80);
+
     c.restore();
   }
 
@@ -347,16 +356,18 @@ export class Renderer {
 
     c.save();
     const grad = c.createLinearGradient(0, y - 46, 0, y);
-    grad.addColorStop(0, 'rgba(255,45,149,0)');
-    grad.addColorStop(1, danger ? 'rgba(255,60,90,0.38)' : 'rgba(0,240,255,0.18)');
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    // Calm by default, unmistakable when something is about to land. The line
+    // only shouts when shouting is useful.
+    grad.addColorStop(1, danger ? 'rgba(255,60,90,0.34)' : 'rgba(120,150,255,0.10)');
     c.fillStyle = grad;
     c.fillRect(0, y - 46, this.w, 46);
 
-    c.strokeStyle = danger ? '#ff3b64' : '#00f0ff';
-    c.lineWidth = 2;
+    c.strokeStyle = danger ? '#ff3b64' : 'rgba(150,175,255,0.5)';
+    c.lineWidth = danger ? 2 : 1.5;
     if (this.quality === 'high') {
       c.shadowColor = c.strokeStyle;
-      c.shadowBlur = danger ? 20 : 12;
+      c.shadowBlur = danger ? 20 : 6;
     }
     c.beginPath();
     c.moveTo(0, y);
@@ -787,6 +798,49 @@ export class Renderer {
     }
 
     c.restore();
+  }
+
+  /**
+   * Held power-ups, docked either side of the ship.
+   *
+   * Sitting them on the hull rather than in the HUD keeps the player's eyes in
+   * one place: the thing you tap is right next to the thing you are watching,
+   * instead of at the opposite corner of the screen.
+   */
+  private drawPowerSlots(game: GameCore): void {
+    const slots = game.powerSlots();
+    if (slots.length === 0) return;
+    const c = this.ctx;
+
+    for (const slot of slots) {
+      const def = POWER_UPS[slot.type];
+      // A slow pulse marks them as live and tappable rather than decorative.
+      const pulse = 0.5 + Math.sin(this.time * 3.4 + slot.x) * 0.5;
+
+      c.save();
+      c.translate(slot.x, slot.y);
+
+      if (this.quality === 'high') {
+        c.shadowColor = `hsl(${def.hue},100%,62%)`;
+        c.shadowBlur = 10 + pulse * 10;
+      }
+
+      c.fillStyle = `hsla(${def.hue},85%,14%,0.94)`;
+      c.strokeStyle = `hsl(${def.hue},100%,${62 + pulse * 12}%)`;
+      c.lineWidth = 2;
+      c.beginPath();
+      c.arc(0, 0, slot.r, 0, Math.PI * 2);
+      c.fill();
+      c.stroke();
+
+      c.shadowBlur = 0;
+      c.fillStyle = '#ffffff';
+      c.font = '700 15px ui-sans-serif, system-ui, sans-serif';
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText(def.icon, 0, 1);
+      c.restore();
+    }
   }
 
   private drawPopups(game: GameCore): void {

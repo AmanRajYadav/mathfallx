@@ -1,5 +1,5 @@
 import React from 'react';
-import { Delete, Keyboard, Mic, MicOff, TriangleAlert } from 'lucide-react';
+import { Delete, Home, Keyboard, Mic, MicOff, Pause, TriangleAlert } from 'lucide-react';
 import type { RecognizerState } from '../../voice/VoiceInput';
 
 export interface VoiceUiState {
@@ -21,6 +21,8 @@ interface ControlsProps {
   onToggleKeypad: () => void;
   input: string;
   onKey: (k: string) => void;
+  onPause: () => void;
+  onMenu: () => void;
 }
 
 /** Human-readable status line for the microphone. */
@@ -28,10 +30,12 @@ function voiceLabel(v: VoiceUiState): { label: string; tone: 'ok' | 'warn' | 'di
   if (!v.supported) return { label: 'Voice not supported here — use the keypad', tone: 'warn' };
   if (!v.enabled) return { label: 'Tap the mic to answer out loud', tone: 'dim' };
   switch (v.state) {
+    // Kept short: the row is one line on a phone and a longer sentence just
+    // ellipsises away the part that tells you what to do.
     case 'denied':
-      return { label: 'Microphone blocked — allow it in site settings', tone: 'warn' };
+      return { label: 'Mic blocked — allow, then tap to retry', tone: 'warn' };
     case 'error':
-      return { label: 'Mic trouble — retrying', tone: 'warn' };
+      return { label: 'Mic problem — tap to retry', tone: 'warn' };
     case 'speaking':
       return { label: 'Listening…', tone: 'ok' };
     case 'listening':
@@ -55,6 +59,7 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'del', 'go'];
 
 const Controls: React.FC<ControlsProps> = ({
   bottomRef, voice, onToggleVoice, keypadOpen, onToggleKeypad, input, onKey,
+  onPause, onMenu,
 }) => {
   const { label, tone } = voiceLabel(voice);
   const showMatch = voice.lastMatch !== null && Date.now() - voice.lastMatchAt < 1100;
@@ -118,6 +123,17 @@ const Controls: React.FC<ControlsProps> = ({
           aria-label={keypadOpen ? 'Hide keypad' : 'Show keypad'}
         >
           <Keyboard size={20} />
+        </button>
+      </div>
+
+      {/* Installed to the home screen there is no browser chrome at all, so
+          without these there is literally no way out of a run. */}
+      <div className="mf-nav">
+        <button type="button" className="mf-nav-btn" onPointerDown={(e) => { e.preventDefault(); onPause(); }}>
+          <Pause size={14} /> Pause
+        </button>
+        <button type="button" className="mf-nav-btn" onPointerDown={(e) => { e.preventDefault(); onMenu(); }}>
+          <Home size={14} /> Menu
         </button>
       </div>
 

@@ -61,6 +61,8 @@ export interface ModeRecord {
 
 export interface Profile {
   v: 2;
+  /** Display name on the global leaderboard. Empty until the player sets one. */
+  name: string;
   theta: number;
   peakTheta: number;
   answers: number;
@@ -102,6 +104,7 @@ export function defaultProfile(): Profile {
   const now = Date.now();
   return {
     v: 2,
+    name: '',
     theta: START_RATING,
     peakTheta: START_RATING,
     answers: 0,

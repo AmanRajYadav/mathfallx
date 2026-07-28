@@ -8,8 +8,10 @@ import { rankFor } from '../../engine/adaptive';
 import type { GameMode, Profile } from '../../engine/profile';
 import type { Skill } from '../../engine/generator';
 import { VOICE_LANGUAGES } from '../../voice/recognizer';
+import { hapticsSupported, vibrate } from '../../audio/sound';
+import { fetchTop, playerId, type LeaderboardResult } from '../../net/leaderboard';
 
-export type Screen = 'title' | 'playing' | 'paused' | 'over' | 'settings' | 'stats';
+export type Screen = 'title' | 'playing' | 'paused' | 'over' | 'settings' | 'stats' | 'board';
 
 const SKILL_LABELS: Record<string, string> = {
   add: 'Addition',
@@ -147,6 +149,10 @@ export const TitleScreen: React.FC<TitleProps> = ({ profile, voiceSupported, dai
           </span>
         </button>
 
+        <button className="mf-btn mf-btn--ghost" onClick={() => onScreen('board')}>
+          <Trophy size={17} /> Global leaderboard
+        </button>
+
         <div className="mf-grid2">
           <button className="mf-btn mf-btn--ghost" onClick={() => onScreen('stats')}>
             <ChartNoAxesColumn size={17} /> Stats
@@ -199,12 +205,19 @@ export const PauseScreen: React.FC<{
 
 // ---------------------------------------------------------------- game over
 
+export type SubmitState = 'idle' | 'sending' | 'done' | 'failed';
+
 export const GameOverScreen: React.FC<{
   summary: RunSummary;
   profile: Profile;
+  name: string;
+  submitState: SubmitState;
+  onName: (v: string) => void;
+  onSubmit: () => void;
+  onViewBoard: () => void;
   onAgain: () => void;
   onMenu: () => void;
-}> = ({ summary, profile, onAgain, onMenu }) => {
+}> = ({ summary, profile, name, submitState, onName, onSubmit, onViewBoard, onAgain, onMenu }) => {
   const delta = summary.ratingAfter - summary.ratingBefore;
   const rank = rankFor(profile.theta);
 
@@ -254,6 +267,44 @@ export const GameOverScreen: React.FC<{
             </div>
           </div>
         </div>
+
+        {/* Submission is opt-in and asked for once. A name box that appears
+            before the player has any reason to care is just friction. */}
+        {summary.score > 0 && (
+          <>
+            <div className="mf-h2">Global leaderboard</div>
+            {submitState === 'done' ? (
+              <button className="mf-btn mf-btn--ghost" onClick={onViewBoard}>
+                <Trophy size={17} /> Submitted — view the board
+              </button>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    className="mf-select"
+                    style={{ flex: 1, maxWidth: 'none' }}
+                    value={name}
+                    maxLength={16}
+                    placeholder="Your name"
+                    onChange={(e) => onName(e.target.value)}
+                    aria-label="Leaderboard name"
+                  />
+                  <button
+                    className="mf-btn mf-btn--ghost"
+                    style={{ width: 'auto', padding: '0 16px' }}
+                    disabled={!name.trim() || submitState === 'sending'}
+                    onClick={onSubmit}
+                  >
+                    {submitState === 'sending' ? 'Sending…' : 'Submit'}
+                  </button>
+                </div>
+                {submitState === 'failed' && (
+                  <p className="mf-note">Couldn&rsquo;t reach the leaderboard. Your score is saved locally.</p>
+                )}
+              </>
+            )}
+          </>
+        )}
 
         <button className="mf-btn mf-btn--primary" onClick={onAgain}>
           <RotateCcw size={19} /> Play again
@@ -414,11 +465,23 @@ export const SettingsScreen: React.FC<SettingsProps> = ({
             />
           </div>
           <div className="mf-row">
-            <span className="mf-row-label">Haptics</span>
+            <span className="mf-row-label">
+              Haptics
+              {!hapticsSupported() && (
+                <span className="mf-row-hint">Not available in this browser</span>
+              )}
+            </span>
             <button
               className="mf-switch"
-              data-on={s.haptics}
-              onClick={() => onChange('haptics', !s.haptics)}
+              data-on={s.haptics && hapticsSupported()}
+              disabled={!hapticsSupported()}
+              onClick={() => {
+                const next = !s.haptics;
+                onChange('haptics', next);
+                // Fire one immediately so the toggle proves itself. On iOS the
+                // Taptic route is fixed-intensity and easy to doubt.
+                if (next) vibrate(30);
+              }}
               aria-label="Toggle haptics"
             />
           </div>
@@ -479,6 +542,81 @@ export const SettingsScreen: React.FC<SettingsProps> = ({
         >
           Reset all progress
         </button>
+      </div>
+    </div>
+  );
+};
+
+// -------------------------------------------------------------- leaderboard
+
+const MODE_LABELS: Record<string, string> = {
+  easy: 'Easy', arcade: 'Arcade', daily: 'Daily', blitz: 'Blitz', zen: 'Practice',
+};
+
+export const LeaderboardScreen: React.FC<{
+  mode: GameMode;
+  onMode: (m: GameMode) => void;
+  onBack: () => void;
+}> = ({ mode, onMode, onBack }) => {
+  const [state, setState] = React.useState<LeaderboardResult>({
+    status: 'loading', rows: [], selfIndex: -1,
+  });
+  const me = React.useMemo(() => playerId(), []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setState({ status: 'loading', rows: [], selfIndex: -1 });
+    void fetchTop(mode, 50).then((r) => { if (!cancelled) setState(r); });
+    return () => { cancelled = true; };
+  }, [mode]);
+
+  return (
+    <div className="mf-overlay">
+      <div className="mf-overlay-inner">
+        <h2 className="mf-title" style={{ fontSize: 34 }}>GLOBAL</h2>
+
+        <div className="mf-pill-row">
+          {(['easy', 'arcade', 'daily', 'blitz'] as GameMode[]).map((m) => (
+            <button key={m} className="mf-pill" data-on={m === mode} onClick={() => onMode(m)}>
+              {MODE_LABELS[m]}
+            </button>
+          ))}
+        </div>
+
+        {state.status === 'loading' && <p className="mf-note">Loading…</p>}
+        {state.status === 'offline' && (
+          <p className="mf-note">You&rsquo;re offline. The board needs a connection; the game doesn&rsquo;t.</p>
+        )}
+        {state.status === 'error' && (
+          <p className="mf-note">
+            Couldn&rsquo;t reach the leaderboard. If this is a fresh project, run{' '}
+            <strong>supabase/schema.sql</strong> in the SQL editor first.
+          </p>
+        )}
+        {state.status === 'ok' && state.rows.length === 0 && (
+          <p className="mf-note">No scores yet in {MODE_LABELS[mode]}. Be the first.</p>
+        )}
+
+        {state.rows.length > 0 && (
+          <div className="mf-board">
+            {state.rows.map((r, i) => (
+              <div
+                key={`${r.player_id}-${i}`}
+                className={'mf-board-row' + (r.player_id === me ? ' mf-board-row--me' : '')}
+              >
+                <span className="mf-board-rank">{i + 1}</span>
+                <span className="mf-board-name">{r.name}</span>
+                <span className="mf-board-meta">w{r.wave} · {Math.round(r.accuracy * 100)}%</span>
+                <span className="mf-board-score">{r.score.toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button className="mf-btn mf-btn--primary" onClick={onBack}>
+          <ArrowLeft size={18} /> Back
+        </button>
+        <FluenceBadge />
       </div>
     </div>
   );
