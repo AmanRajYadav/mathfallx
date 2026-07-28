@@ -85,6 +85,8 @@ function tone(
   delay = 0,
 ): void {
   if (!ctx || !master) return;
+  // A non-finite frequency makes every AudioParam call throw.
+  if (!Number.isFinite(freq) || !Number.isFinite(toFreq) || !Number.isFinite(gain)) return;
   const t0 = ctx.currentTime + delay;
   const osc = ctx.createOscillator();
   const g = ctx.createGain();
@@ -124,6 +126,17 @@ function noise(duration: number, gain: number, filterFrom: number, filterTo: num
  *                  the chain grows, which is most of why chaining feels good.
  */
 export function playSfx(name: Sfx, intensity = 0): void {
+  try {
+    playSfxUnsafe(name, intensity);
+  } catch {
+    // Never let a sound take down the caller. These fire from inside the game
+    // loop, and an AudioContext that has been interrupted — a phone call, an
+    // audio-focus change, a device running out of voices — can throw on node
+    // creation. A missing effect is nothing; a dead frame loop is the game.
+  }
+}
+
+function playSfxUnsafe(name: Sfx, intensity: number): void {
   if (!ctx) return;
   if (ctx.state === 'suspended') void ctx.resume();
 

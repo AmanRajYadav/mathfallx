@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import type { RunSummary } from '../../engine/GameCore';
 import { rankFor } from '../../engine/adaptive';
-import type { GameMode, Profile } from '../../engine/profile';
+import { dailyStreak, ratingHistory, type GameMode, type Profile } from '../../engine/profile';
 import type { Skill } from '../../engine/generator';
 import { VOICE_LANGUAGES } from '../../voice/recognizer';
 import { hapticsSupported, vibrate } from '../../audio/sound';
@@ -71,6 +71,55 @@ export const FluenceBadge: React.FC = () => (
   </div>
 );
 
+/**
+ * Rating over the last N answers.
+ *
+ * The event log already stores the rating produced by every answer, so this
+ * costs nothing to draw — and progress you can see is most of why anyone comes
+ * back. A number that only ever appears as a single figure feels static even
+ * when it is climbing.
+ */
+const Sparkline: React.FC<{ values: number[]; color: string }> = ({ values, color }) => {
+  if (values.length < 4) return null;
+  const w = 300;
+  const h = 56;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = Math.max(30, max - min); // floor stops a flat run looking like noise
+  const mid = (min + max) / 2;
+  const lo = mid - span / 2;
+
+  const pts = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * w;
+    const y = h - ((v - lo) / span) * h;
+    return `${x.toFixed(1)},${Math.max(2, Math.min(h - 2, y)).toFixed(1)}`;
+  });
+
+  const rising = values[values.length - 1] >= values[0];
+
+  return (
+    <div className="mf-spark">
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" role="img"
+        aria-label={`Rating trend, ${rising ? 'rising' : 'falling'}`}>
+        <defs>
+          <linearGradient id="sp-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <polygon points={`0,${h} ${pts.join(' ')} ${w},${h}`} fill="url(#sp-fill)" />
+        <polyline points={pts.join(' ')} fill="none" stroke={color}
+          strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="mf-spark-legend">
+        <span>{Math.round(min)}</span>
+        <span>last {values.length} answers</span>
+        <span>{Math.round(max)}</span>
+      </div>
+    </div>
+  );
+};
+
 function Stat({ k, v, sub }: { k: string; v: React.ReactNode; sub?: string }) {
   return (
     <div className="mf-stat">
@@ -95,6 +144,7 @@ interface TitleProps {
 
 export const TitleScreen: React.FC<TitleProps> = ({ profile, voiceSupported, dailyDone, onStart, onScreen }) => {
   const rank = rankFor(profile.theta);
+  const streak = dailyStreak(profile);
   return (
     <div className="mf-overlay">
       <div className="mf-overlay-inner">
@@ -128,8 +178,15 @@ export const TitleScreen: React.FC<TitleProps> = ({ profile, voiceSupported, dai
         <button className="mf-btn" onClick={() => onStart('daily')}>
           <CalendarDays className="mf-btn-icon" size={22} />
           <span className="mf-btn-text">
-            <span>Daily Challenge {!dailyDone && <span className="mf-badge-new">NEW</span>}</span>
-            <span className="mf-btn-sub">40 problems — identical for everyone today</span>
+            <span>
+              Daily Challenge {!dailyDone && <span className="mf-badge-new">NEW</span>}
+              {streak > 1 && <span className="mf-streak">🔥 {streak}</span>}
+            </span>
+            <span className="mf-btn-sub">
+              {streak > 1
+                ? `${streak}-day streak — 40 problems, same for everyone`
+                : '40 problems — identical for everyone today'}
+            </span>
           </span>
         </button>
 
@@ -628,6 +685,7 @@ export const StatsScreen: React.FC<{ profile: Profile; onBack: () => void }> = (
   const rank = rankFor(profile.theta);
   const acc = profile.answers > 0 ? profile.correct / profile.answers : 0;
   const dailyKeys = Object.keys(profile.daily).sort().reverse().slice(0, 7);
+  const streak = dailyStreak(profile);
 
   return (
     <div className="mf-overlay">
@@ -645,7 +703,10 @@ export const StatsScreen: React.FC<{ profile: Profile; onBack: () => void }> = (
           </div>
         </div>
 
+        <Sparkline values={ratingHistory(profile, 200)} color={rank.color} />
+
         <div className="mf-grid2">
+          <Stat k="Daily streak" v={streak} sub={streak === 1 ? 'day' : 'days'} />
           <Stat k="Problems" v={profile.answers.toLocaleString()} />
           <Stat k="Accuracy" v={`${Math.round(acc * 100)}%`} />
           <Stat k="Arcade best" v={profile.modes.arcade.bestScore.toLocaleString()} />

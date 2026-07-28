@@ -63,6 +63,76 @@ create policy "anyone can submit"
 -- a player's best run is handled by inserting and reading the max, rather than
 -- by granting update rights that would also let anyone rewrite anyone else's.
 
+-- ---------------------------------------------------------------------------
+-- Plausibility validation
+--
+-- Anyone holding the anon key can POST a row, so CHECK constraints alone only
+-- stop absurd values, not a fabricated 50,000. This trigger rejects runs that
+-- are not physically possible.
+--
+-- The bounds come from documented human limits: simple visual choice-reaction
+-- does not go below ~150ms even for elite performers, and answering arithmetic
+-- requires retrieval on top of that. A client cannot be trusted to enforce
+-- this; the database can.
+--
+-- None of this makes cheating impossible — a determined player can pace a
+-- fake client realistically. It makes the board resistant to the trivial
+-- attack, which is the difference between a leaderboard people believe and one
+-- they ignore.
+-- ---------------------------------------------------------------------------
+
+alter table public.scores
+  add column if not exists duration_ms integer not null default 0;
+
+create or replace function public.validate_score()
+returns trigger
+language plpgsql
+as $$
+declare
+  seconds numeric;
+  per_answer numeric;
+begin
+  seconds := greatest(new.duration_ms, 0) / 1000.0;
+
+  -- A run with solves must have lasted long enough to contain them.
+  if new.solved > 0 then
+    if seconds < 1 then
+      raise exception 'implausible: % solved in %s', new.solved, seconds;
+    end if;
+
+    per_answer := seconds / new.solved;
+    -- 0.35s per answer sustained is already superhuman across a whole run.
+    if per_answer < 0.35 then
+      raise exception 'implausible pace: %s per answer', round(per_answer, 3);
+    end if;
+  end if;
+
+  -- Score has to be reachable from the number of problems actually solved.
+  -- The in-game ceiling is roughly 10 x speed(2.1) x difficulty(2.4) x kind(3)
+  -- x multiplier(8); 700 a piece leaves generous headroom over that.
+  if new.score > greatest(new.solved, 1) * 700 then
+    raise exception 'implausible: score % from % solved', new.score, new.solved;
+  end if;
+
+  -- A combo cannot exceed the problems solved.
+  if new.best_combo > new.solved then
+    raise exception 'implausible: combo % exceeds solved %', new.best_combo, new.solved;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists scores_validate on public.scores;
+create trigger scores_validate
+  before insert on public.scores
+  for each row execute function public.validate_score();
+
+-- Rate limit: one submission per player per mode per minute. Blocks a script
+-- from flooding the table even with individually plausible rows.
+create unique index if not exists scores_rate_limit_idx
+  on public.scores (player_id, mode, date_trunc('minute', created_at));
+
 -- Convenience view: one best row per player per mode, already ranked.
 create or replace view public.leaderboard as
 select distinct on (mode, player_id)

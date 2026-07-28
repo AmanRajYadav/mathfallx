@@ -269,3 +269,40 @@ export function ensureSkill(p: Profile, skill: Skill): SkillState {
 export function accuracy(p: Profile): number {
   return p.answers > 0 ? p.correct / p.answers : 0;
 }
+
+/**
+ * Consecutive days ending today (or yesterday) with a completed Daily.
+ *
+ * Counting back from yesterday as well as today is deliberate: a streak should
+ * not read as broken first thing in the morning simply because that day's
+ * Daily has not been played yet.
+ */
+export function dailyStreak(p: Profile, now: Date = new Date()): number {
+  const key = (d: Date) => d.toISOString().slice(0, 10);
+  const day = (offset: number) => {
+    const d = new Date(now);
+    d.setUTCDate(d.getUTCDate() - offset);
+    return key(d);
+  };
+
+  let start = 0;
+  if (!p.daily[day(0)]) {
+    if (!p.daily[day(1)]) return 0;
+    start = 1;
+  }
+
+  let streak = 0;
+  for (let i = start; i < 3650; i++) {
+    if (!p.daily[day(i)]) break;
+    streak++;
+  }
+  return streak;
+}
+
+/**
+ * Rating history, oldest first, reconstructed from the event log.
+ * Every answer already records the rating it produced, so the curve is free.
+ */
+export function ratingHistory(p: Profile, limit = 200): number[] {
+  return p.syncQueue.slice(-limit).map((e) => e.th);
+}

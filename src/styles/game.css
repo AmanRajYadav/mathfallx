@@ -391,6 +391,45 @@
   letter-spacing: 0.06em;
 }
 
+/* Rating trend */
+.mf-spark {
+  border-radius: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 8, 26, 0.7);
+  padding: 10px 12px 8px;
+}
+
+.mf-spark svg {
+  display: block;
+  width: 100%;
+  height: 56px;
+}
+
+.mf-spark-legend {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(234, 230, 255, 0.35);
+  font-variant-numeric: tabular-nums;
+}
+
+.mf-streak {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  background: rgba(255, 138, 61, 0.2);
+  border: 1px solid rgba(255, 138, 61, 0.5);
+  color: #ffb03a;
+}
+
 /* Leaderboard */
 .mf-board {
   display: flex;

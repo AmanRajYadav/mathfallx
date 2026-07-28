@@ -196,10 +196,33 @@ const MathFallGame: React.FC = () => {
 
     // Single animation frame loop. Nothing here allocates or touches React
     // state directly — the HUD arrives via the throttled onHud callback.
+    //
+    // The next frame is scheduled FIRST, and the body is wrapped, because this
+    // loop previously scheduled at the end with no guard. A single throw
+    // anywhere in tick or render — one bad gradient, one NaN coordinate —
+    // permanently killed the game, and the failure was almost invisible:
+    // submit() still ran and still played its hit sound, but update() never
+    // ran again to remove the block, so it looked like the shot fired and the
+    // problem simply refused to die. Reported from real play as "sound comes
+    // but the problem is not being shot".
+    //
+    // A dropped frame is survivable. A dropped loop is not.
+    let loopErrors = 0;
     const loop = (now: number) => {
-      game.tick(now);
-      renderer.render(game, now);
       rafRef.current = requestAnimationFrame(loop);
+      try {
+        game.tick(now);
+        renderer.render(game, now);
+      } catch (err) {
+        loopErrors += 1;
+        if (loopErrors <= 3) {
+          console.error('[mathfall] frame failed, continuing', err);
+        }
+        // Persistent failure means something is structurally wrong rather than
+        // a one-off. Drop to the cheap renderer, which avoids most of the
+        // paths that can throw, and keep going.
+        if (loopErrors === 12) renderer.setQuality('low');
+      }
     };
     rafRef.current = requestAnimationFrame(loop);
 
@@ -610,6 +633,7 @@ const MathFallGame: React.FC = () => {
       bestCombo: s.bestCombo,
       rating: s.ratingAfter,
       voiceShare: s.voiceShare,
+      durationMs: s.durationMs,
     }).then((ok) => {
       setSubmitState(ok ? 'done' : 'failed');
       if (ok) { setBoardMode(s.mode); playSfx('wave'); }

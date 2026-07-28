@@ -420,7 +420,7 @@ export class GameCore {
     slot.spin = 0;
     slot.intro = 0;
     slot.dying = 0;
-    this.opts.onEvent?.({ type: 'shard' });
+    this.emit({ type: 'shard' });
     this.emitTargets();
   }
 
@@ -447,9 +447,42 @@ export class GameCore {
     this.burst(this.width / 2, this.playBottom - 18, 26, 0, 1.4);
     this.ring(this.width / 2, this.playBottom - 18, 120, 0, 4);
     this.hitStop = 70;
-    this.opts.onEvent?.({ type: 'shipHit' });
+    this.emit({ type: 'shipHit' });
     this.hudDirty = true;
   }
+
+  /**
+   * Dispatches a game event to the shell.
+   *
+   * Wrapped because these listeners fire from *inside* `tick` — a miss or a
+   * landed shard resolves mid-update — and they do real work out in the host:
+   * audio nodes, haptics, React state. A throw in any of them used to unwind
+   * straight through the simulation and take the animation loop with it, so
+   * one failed sound effect silently froze the entire game.
+   *
+   * The simulation must never depend on its audience behaving.
+   */
+  private emit(e: GameEvent): void {
+    if (!this.opts.onEvent) return;
+    try {
+      this.opts.onEvent(e);
+    } catch (err) {
+      this.listenerErrors += 1;
+      if (this.listenerErrors <= 3) console.error('[mathfall] event listener failed', e.type, err);
+    }
+  }
+
+  /** Count of listener failures, surfaced in diagnostics. */
+  listenerErrors = 0;
+
+  /**
+   * Multiplier on particle counts, 0.35-1, driven by measured frame time.
+   * Effects are the only part of the simulation worth degrading — the
+   * arithmetic and the falling are not negotiable.
+   */
+  effectBudget = 1;
+  /** Exponential moving average of frame time, ms. */
+  avgFrameMs = 0;
 
   // --------------------------------------------------------------- power-ups
 
@@ -462,7 +495,7 @@ export class GameCore {
     if (this.status !== 'playing') return false;
     const idx = this.inventory.indexOf(type);
     if (idx === -1) {
-      this.opts.onEvent?.({ type: 'powerFail' });
+      this.emit({ type: 'powerFail' });
       return false;
     }
     this.inventory.splice(idx, 1);
@@ -494,7 +527,7 @@ export class GameCore {
     }
 
     this.addPopup(this.width / 2, this.playBottom - 150, def.label, def.hue, true);
-    this.opts.onEvent?.({ type: 'power', power: type });
+    this.emit({ type: 'power', power: type });
     this.hudDirty = true;
     this.emitTargets();
     return true;
@@ -533,7 +566,7 @@ export class GameCore {
     p.hue = POWER_UPS[type].hue;
     p.t = 0;
     p.spin = 0;
-    this.opts.onEvent?.({ type: 'drop', power: type });
+    this.emit({ type: 'drop', power: type });
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -693,7 +726,7 @@ export class GameCore {
       isRecord,
     };
 
-    this.opts.onEvent?.({ type: 'gameover', summary });
+    this.emit({ type: 'gameover', summary });
     this.hudDirty = true;
     this.pushHud();
   }
@@ -725,7 +758,7 @@ export class GameCore {
         this.combo += 1;
         if (this.combo > this.bestCombo) this.bestCombo = this.combo;
         this.applyShake(4, shard.x - this.width / 2, shard.y - this.playBottom);
-        this.opts.onEvent?.({ type: 'shardKill' });
+        this.emit({ type: 'shardKill' });
         this.emitTargets();
         this.hudDirty = true;
         return true;
@@ -745,7 +778,7 @@ export class GameCore {
       // would corrupt the ability estimate.
       this.combo = 0;
       this.shake = Math.max(this.shake, 3);
-      this.opts.onEvent?.({ type: 'reject' });
+      this.emit({ type: 'reject' });
       this.hudDirty = true;
       return false;
     }
@@ -766,7 +799,7 @@ export class GameCore {
       this.ring(target.x, target.y + target.h / 2, 70, target.hue, 2);
       this.applyShake(6, target.x - this.width / 2, target.y - this.playBottom);
       this.fireBeam(target);
-      this.opts.onEvent?.({ type: 'armorHit' });
+      this.emit({ type: 'armorHit' });
       this.emitTargets();
       return true;
     }
@@ -782,7 +815,7 @@ export class GameCore {
     this.overdriveUntil = this.clock + 7000;
     this.flash = 1;
     this.shake = 8;
-    this.opts.onEvent?.({ type: 'overdrive' });
+    this.emit({ type: 'overdrive' });
     this.hudDirty = true;
     return true;
   }
@@ -861,7 +894,13 @@ export class GameCore {
       // Every kill gets a real explosion, not just the rare ones. Destroying a
       // block is the single most repeated action in the game — if it does not
       // land, nothing does.
-      this.burst(cx, cy, heavy ? 70 : block.kind === 'armored' ? 52 : 42, block.hue, heavy ? 1.9 : 1.35);
+      // Particle counts scale with the device budget. A mid-range phone
+      // rendering 70 additive sprites per kill is where the frame rate goes,
+      // and a laggy frame rate is felt as laggy *voice*, because the beam and
+      // the block only disappear on the next painted frame.
+      const q = this.effectBudget;
+      this.burst(cx, cy, Math.round((heavy ? 70 : block.kind === 'armored' ? 52 : 42) * q),
+        block.hue, heavy ? 1.9 : 1.35);
       this.ring(cx, cy, heavy ? 230 : 165, block.hue, heavy ? 7 : 5);
       this.ring(cx, cy, heavy ? 320 : 90, heavy ? 45 : block.hue, heavy ? 3 : 2);
       this.flash = Math.max(this.flash, heavy ? 0.5 : 0.22);
@@ -878,7 +917,7 @@ export class GameCore {
         this.addPopup(this.width / 2, this.playBottom - 130, `${this.combo} CHAIN`, 320, true);
       }
 
-      this.opts.onEvent?.({ type: 'hit', kind: block.kind, combo: this.combo, fast, source });
+      this.emit({ type: 'hit', kind: block.kind, combo: this.combo, fast, source });
     } else {
       this.missed += 1;
       this.combo = 0;
@@ -892,7 +931,7 @@ export class GameCore {
       this.burst(block.x, this.playBottom - 6, 30, 0, 1.6);
       this.ring(block.x, this.playBottom - 6, 150, 0, 4);
       this.hitStop = 70;
-      this.opts.onEvent?.({ type: 'miss' });
+      this.emit({ type: 'miss' });
     }
 
     block.dying = 1;
@@ -946,9 +985,16 @@ export class GameCore {
     }
 
     let skills = this.config.skills;
-    if (!skills && this.rng.chance(0.3)) {
-      const weak = weakestSkill(this.adaptive);
-      if (weak) skills = [weak];
+    if (!skills) {
+      // Practice exists to drill what you are worst at, so it commits hard —
+      // most problems come from the weakest skill rather than the occasional
+      // nudge the other modes get. A mode called Practice that just serves
+      // random problems is only a slower Arcade.
+      const bias = this.config.mode === 'zen' ? 0.8 : 0.3;
+      if (this.rng.chance(bias)) {
+        const weak = weakestSkill(this.adaptive, this.config.mode === 'zen' ? 3 : 6);
+        if (weak) skills = [weak];
+      }
     }
 
     const exclude = new Set<number>();
@@ -1117,6 +1163,14 @@ export class GameCore {
     // teleports through the floor on resume.
     if (frameMs > 250) frameMs = 250;
 
+    // Rolling frame-time average, used to shed effect work on slow devices
+    // before the player notices. Cheap: one add and one multiply per frame.
+    if (this.status === 'playing' && frameMs > 0) {
+      this.avgFrameMs = this.avgFrameMs === 0 ? frameMs : this.avgFrameMs * 0.96 + frameMs * 0.04;
+      if (this.avgFrameMs > 26) this.effectBudget = Math.max(0.35, this.effectBudget - 0.02);
+      else if (this.avgFrameMs < 19) this.effectBudget = Math.min(1, this.effectBudget + 0.01);
+    }
+
     // Hit-stop: the world holds still for a few frames after a heavy impact,
     // while effects and the HUD keep animating. It costs nothing and is most
     // of what separates a hit that lands from one that merely happens.
@@ -1193,7 +1247,7 @@ export class GameCore {
 
       if (p.t >= 1 || (Math.abs(p.x - tx) < 14 && Math.abs(p.y - ty) < 14)) {
         p.alive = false;
-        this.opts.onEvent?.({ type: 'collect', power: p.type });
+        this.emit({ type: 'collect', power: p.type });
 
         // Defensive power-ups fire on contact. Holding a freeze while blocks
         // are landing helps nobody: by the time you have decided to spend it,
@@ -1361,7 +1415,7 @@ export class GameCore {
     const nextWaveAt = this.wave * 8;
     if (this.solved >= nextWaveAt) {
       this.wave += 1;
-      this.opts.onEvent?.({ type: 'wave', wave: this.wave });
+      this.emit({ type: 'wave', wave: this.wave });
       this.addPopup(this.width / 2, this.playBottom - 190, `WAVE ${this.wave}`, 280, true);
       this.hudDirty = true;
     }

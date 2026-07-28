@@ -34,6 +34,8 @@ export interface ScoreRow {
   rating: number;
   voice_share: number;
   player_id: string;
+  /** Run length, checked server-side against the solve count for plausibility. */
+  duration_ms: number;
   created_at?: string;
 }
 
@@ -47,6 +49,7 @@ export interface SubmitPayload {
   bestCombo: number;
   rating: number;
   voiceShare: number;
+  durationMs: number;
 }
 
 export type LeaderboardStatus = 'idle' | 'loading' | 'ok' | 'offline' | 'error';
@@ -114,6 +117,7 @@ export async function submitScore(p: SubmitPayload): Promise<boolean> {
     rating: Math.round(p.rating),
     voice_share: Math.max(0, Math.min(1, p.voiceShare)),
     player_id: playerId(),
+    duration_ms: Math.round(p.durationMs),
   };
 
   try {
