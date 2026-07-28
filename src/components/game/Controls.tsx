@@ -42,7 +42,16 @@ function voiceLabel(v: VoiceUiState): { label: string; tone: 'ok' | 'warn' | 'di
   }
 }
 
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'del', '0', 'go'];
+/**
+ * Two rows, not four.
+ *
+ * A phone-style 3x4 pad ate roughly a third of the viewport, and in a game
+ * where the whole task is reading falling text, vertical space *is* reaction
+ * time. Six columns keeps every key a comfortable width on a 360px screen
+ * while costing barely 100px of height. Digits are laid out in reading order
+ * so they stay findable without looking.
+ */
+const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'del', 'go'];
 
 const Controls: React.FC<ControlsProps> = ({
   bottomRef, voice, onToggleVoice, keypadOpen, onToggleKeypad, input, onKey,
@@ -66,23 +75,39 @@ const Controls: React.FC<ControlsProps> = ({
           {!voice.supported ? <TriangleAlert size={21} /> : voice.enabled ? <Mic size={21} /> : <MicOff size={21} />}
         </button>
 
-        <div className="mf-voice-body">
-          <div className="mf-voice-label">Voice</div>
-          <div
-            className={
-              'mf-voice-heard' +
-              (showMatch ? ' mf-voice-heard--match'
-                : voice.miss !== null ? ' mf-voice-heard--miss'
-                : voice.heard ? '' : ' mf-voice-heard--dim')
-            }
+        {/* The typed entry lives in this row rather than owning one of its own.
+            A separate input bar cost ~50px of board on a phone, and the two are
+            never really needed at once — you are either typing or speaking. */}
+        {input ? (
+          <button
+            type="button"
+            className="mf-voice-body mf-voice-body--entry"
+            onPointerDown={(e) => { e.preventDefault(); onKey('clear'); }}
+            aria-label={`Entry ${input}. Tap to clear.`}
           >
-            {showMatch
-              ? `✓ ${voice.lastMatch}`
-              : voice.miss !== null
-                ? `heard ${voice.miss} — not on screen`
-                : voice.heard || label}
+            <div className="mf-voice-label">Entry · tap to clear</div>
+            <div className="mf-entry">{input}</div>
+          </button>
+        ) : (
+          <div className="mf-voice-body">
+            <div className="mf-voice-label">Voice</div>
+            <div
+              className={
+                'mf-voice-heard' +
+                (showMatch ? ' mf-voice-heard--match'
+                  : voice.miss !== null ? ' mf-voice-heard--miss'
+                  : voice.heard ? '' : ' mf-voice-heard--dim')
+              }
+              aria-live="polite"
+            >
+              {showMatch
+                ? `✓ ${voice.lastMatch}`
+                : voice.miss !== null
+                  ? `heard ${voice.miss} — not on screen`
+                  : voice.heard || label}
+            </div>
           </div>
-        </div>
+        )}
 
         <button
           type="button"
@@ -98,19 +123,6 @@ const Controls: React.FC<ControlsProps> = ({
 
       {keypadOpen && (
         <>
-          {/* Tapping the entry wipes it — the same job as Space on a keyboard.
-              Without it the only way to clear a wrong number on a phone is to
-              hit backspace once per digit while blocks keep falling. */}
-          <button
-            type="button"
-            className={`mf-input${input ? '' : ' mf-input--empty'}`}
-            onPointerDown={(e) => { e.preventDefault(); if (input) onKey('clear'); }}
-            aria-label={input ? `Entry ${input}. Tap to clear.` : 'No entry'}
-            aria-live="polite"
-          >
-            {input || '—'}
-            {input && <span className="mf-input-clear">clear</span>}
-          </button>
           <div className="mf-keypad">
             {KEYS.map((k) => (
               <button

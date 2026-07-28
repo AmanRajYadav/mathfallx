@@ -337,5 +337,16 @@ function suffixAfter(full: string, prior: string): string | null {
   return full;
 }
 
+/**
+ * The numeric readings of a transcript, best first — for display only.
+ * Keeps the UI showing numbers rather than echoing arbitrary speech back.
+ */
+export function numbersIn(transcript: string, limit = 2): number[] {
+  return extractNumbers(transcript, { min: 0, max: 9999 })
+    .filter((c) => c.score >= MIN_SCORE)
+    .slice(0, limit)
+    .map((c) => c.value);
+}
+
 export { isSpeechSupported };
 export type { RecognizerState };

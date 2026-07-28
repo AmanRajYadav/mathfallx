@@ -8,7 +8,7 @@ import {
   type GameMode, type Profile,
 } from '../../engine/profile';
 import { Renderer } from '../../render/Renderer';
-import { VoiceInput } from '../../voice/VoiceInput';
+import { VoiceInput, numbersIn } from '../../voice/VoiceInput';
 import {
   initAudio, musicForWave, playMusic, playSfx, setMusicVolume, setSfxVolume, stopMusic, vibrate,
 } from '../../audio/sound';
@@ -50,6 +50,8 @@ const MathFallGame: React.FC = () => {
   const [hud, setHud] = useState<HudState>(EMPTY_HUD);
   const [summary, setSummary] = useState<RunSummary | null>(null);
   const [input, setInput] = useState('');
+  /** Mirrors `input` so the key handler can read it without a stale closure. */
+  const inputRef = useRef('');
   const [keypadOpen, setKeypadOpen] = useState(false);
 
   const [voiceUi, setVoiceUi] = useState<VoiceUiState>({
@@ -86,7 +88,15 @@ const MathFallGame: React.FC = () => {
           setVoiceUi((v) => ({ ...v, lastMatch: m.value, lastMatchAt: Date.now(), heard: '', miss: null }));
         }
       },
-      onHeard: (text) => setVoiceUi((v) => (v.heard === text ? v : { ...v, heard: text, miss: null })),
+      // Show only the numeric reading, never the raw transcript. Echoing words
+      // back implies the game is listening for words, which it is not — and a
+      // stray sentence scrolling through the field is pure noise next to the
+      // one thing that matters, which is what number it thinks you said.
+      onHeard: (text) => {
+        const nums = numbersIn(text);
+        const shown = nums.length ? nums.join(' ') : '';
+        setVoiceUi((v) => (v.heard === shown ? v : { ...v, heard: shown, miss: null }));
+      },
       onNoMatch: (heard) => {
         setVoiceUi((v) => ({ ...v, miss: heard[0] ?? null, heard: '' }));
         // Clear it on a timer. A message that lingers indefinitely reads as a
@@ -107,9 +117,15 @@ const MathFallGame: React.FC = () => {
         // Drop a half-typed entry whose target no longer exists. Solve 8 x 5 by
         // voice while "4" is sitting in the field and that orphaned digit stays
         // there, silently prefixing whatever you type next.
-        setInput((prev) => (
-          !prev || answers.some((a) => String(a).startsWith(prev)) ? prev : ''
-        ));
+        //
+        // handleKey guarantees the field only ever holds a viable prefix, so
+        // this can only ever fire when the board changed underneath it — it
+        // will never fight a keypress the way the earlier version did.
+        const prev = inputRef.current;
+        if (prev && !answers.some((a) => String(a).startsWith(prev))) {
+          inputRef.current = '';
+          setInput('');
+        }
       },
       onEvent: (e) => handleEvent(e),
     });
@@ -307,6 +323,8 @@ const MathFallGame: React.FC = () => {
       }
     }
 
+    // Everything the previous run left behind, cleared together.
+    inputRef.current = '';
     setInput('');
     setSummary(null);
     setVoiceUi((v) => ({ ...v, heard: '', lastMatch: null, lastMatchAt: 0, miss: null }));
@@ -349,50 +367,70 @@ const MathFallGame: React.FC = () => {
 
   // ------------------------------------------------------------------ input
 
+  /**
+   * Keypad entry.
+   *
+   * The whole thing runs off `inputRef` rather than inside a `setInput`
+   * updater. Firing `game.submit` from within an updater made the shot a side
+   * effect of rendering, which React is free to run twice — and it made the
+   * entry rules impossible to reason about against the separate clear in
+   * `onTargets`.
+   *
+   * Those two rules used to disagree: a digit that could not begin any live
+   * answer was *kept* here and then *wiped* by the next target change, so it
+   * vanished as fast as it was pressed and the keypad looked dead. There is
+   * now exactly one rule — a dead entry is rejected immediately, audibly, and
+   * never enters the field at all.
+   */
   const handleKey = useCallback((k: string) => {
     initAudio();
     const game = gameRef.current;
     if (!game || game.status !== 'playing') return;
 
-    if (k === 'del') {
-      setInput((v) => v.slice(0, -1));
-      playSfx('tick');
-      return;
-    }
+    const setBoth = (v: string) => { inputRef.current = v; setInput(v); };
 
-    if (k === 'clear') {
-      setInput('');
-      playSfx('tick');
-      return;
-    }
+    if (k === 'del') { setBoth(inputRef.current.slice(0, -1)); playSfx('tick'); return; }
+    if (k === 'clear') { setBoth(''); playSfx('tick'); return; }
 
     if (k === 'go') {
-      setInput((v) => {
-        if (v) game.submit(parseInt(v, 10), 'touch');
-        return '';
-      });
+      const v = inputRef.current;
+      setBoth('');
+      if (v) game.submit(parseInt(v, 10), 'touch');
       return;
     }
 
     if (k < '0' || k > '9') return;
 
-    setInput((prev) => {
-      const next = (prev + k).slice(0, 4);
+    const live = game.liveAnswers();
+    const next = (inputRef.current + k).slice(0, 4);
+    const value = parseInt(next, 10);
+
+    // Exact hit: fire straight away so a two-digit answer needs no submit.
+    if (live.includes(value)) {
+      setBoth('');
       playSfx('tick');
-      // Auto-fire as soon as the digits match something on screen, so a
-      // two-digit answer needs no explicit submit. Typing continues to work if
-      // nothing matches yet.
-      const value = parseInt(next, 10);
-      const matches = game.liveAnswers().includes(value);
-      if (matches) {
-        game.submit(value, 'touch');
-        return '';
-      }
-      // Nothing on screen can start with these digits: clear rather than let
-      // the player build a dead string.
-      const anyPrefix = game.liveAnswers().some((a) => String(a).startsWith(next));
-      return anyPrefix ? next : k;
-    });
+      game.submit(value, 'touch');
+      return;
+    }
+
+    // Still a viable prefix of something on screen — keep building.
+    if (live.some((a) => String(a).startsWith(next))) {
+      setBoth(next);
+      playSfx('tick');
+      return;
+    }
+
+    // Dead end. Restart from this digit if it can begin an answer on its own,
+    // which is what a player correcting a mistyped first digit expects;
+    // otherwise reject it outright rather than parking an entry that can never
+    // complete.
+    if (live.some((a) => String(a).startsWith(k))) {
+      setBoth(k);
+      playSfx('tick');
+    } else {
+      setBoth('');
+      playSfx('reject');
+    }
   }, []);
 
   const toggleVoice = useCallback(() => {
