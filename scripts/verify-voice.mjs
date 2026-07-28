@@ -279,6 +279,53 @@ check('"nine nine nine nine" still offers 9',
 has('four two', 42);
 has('one oh five', 105);
 
+console.log('— a rejected utterance must not poison the ones after it —');
+
+/**
+ * Reported from play: with 7 x 10 on screen, saying "seventeen" by mistake and
+ * then "seventy" repeatedly did nothing.
+ *
+ * Chrome extends one continuous result, so the transcript becomes "seventeen
+ * seventy". If the rejected "seventeen" is never marked consumed it is
+ * re-parsed on every later hypothesis, and the display stays frozen on the old
+ * number — indistinguishable from a dead microphone.
+ */
+{
+  const seen = [];
+  const misses = [];
+  const vi = new VoiceInput({
+    adapter: stubAdapter(),
+    onMatch: (m) => seen.push(m.value),
+    onNoMatch: (h) => misses.push(h[0]),
+  });
+  vi.setEnabled(true);
+  vi.setTargets([70, 6, 20]);   // 7x10, 2x3, 79-59
+
+  const feed = (t) => vi.handle({
+    transcript: t, alternatives: [t], isFinal: true, utteranceId: 'u3', at: Date.now(),
+  });
+
+  feed('17');                   // engine wrote digits for a spoken "seventy"
+  feed('17 70');                // the correction, appended by the recogniser
+  feed('17 70 70');
+
+  void misses;
+  // 17 alone must already rescue to 70: the pair is ambiguous by sound, and 70
+  // is the only reading that is actually on screen.
+  check('a digit-form "17" rescues to 70 when 70 is on screen',
+    seen[0] === 70, `fired=${JSON.stringify(seen)}`);
+  check('every later "70" fires too',
+    seen.length === 3 && seen.every((v) => v === 70), `fired=${JSON.stringify(seen)}`);
+}
+
+// The numeric rescue must stay symmetric and must not invent readings.
+has('17', 70);
+has('70', 17);
+has('15', 50);
+has('50', 15);
+check('"12" has no teen/ten twin', !extractNumbers('12').some((c) => c.value === 20));
+check('"17" still prefers 17', extractNumbers('17')[0].value === 17);
+
 console.log('— recognizer cannot deadlock —');
 
 /**

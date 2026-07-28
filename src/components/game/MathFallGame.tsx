@@ -74,6 +74,8 @@ const MathFallGame: React.FC = () => {
     const renderer = new Renderer(canvas, profile.settings.quality);
     rendererRef.current = renderer;
 
+    let missTimer = 0;
+
     const voice = new VoiceInput({
       lang: profile.settings.voiceLang,
       onMatch: (m) => {
@@ -85,7 +87,13 @@ const MathFallGame: React.FC = () => {
         }
       },
       onHeard: (text) => setVoiceUi((v) => (v.heard === text ? v : { ...v, heard: text, miss: null })),
-      onNoMatch: (heard) => setVoiceUi((v) => ({ ...v, miss: heard[0] ?? null, heard: '' })),
+      onNoMatch: (heard) => {
+        setVoiceUi((v) => ({ ...v, miss: heard[0] ?? null, heard: '' }));
+        // Clear it on a timer. A message that lingers indefinitely reads as a
+        // frozen microphone even when everything is working fine.
+        window.clearTimeout(missTimer);
+        missTimer = window.setTimeout(() => setVoiceUi((v) => ({ ...v, miss: null })), 2200);
+      },
       onState: (state) => setVoiceUi((v) => (v.state === state ? v : { ...v, state })),
       onCommand: (cmd) => {
         const g = gameRef.current;
@@ -106,7 +114,15 @@ const MathFallGame: React.FC = () => {
     const game = new GameCore({
       profile,
       onHud: setHud,
-      onTargets: (answers) => voice.setTargets(answers),
+      onTargets: (answers) => {
+        voice.setTargets(answers);
+        // Drop a half-typed entry whose target no longer exists. Solve 8 x 5 by
+        // voice while "4" is sitting in the field and that orphaned digit stays
+        // there, silently prefixing whatever you type next.
+        setInput((prev) => (
+          !prev || answers.some((a) => String(a).startsWith(prev)) ? prev : ''
+        ));
+      },
       onEvent: (e) => handleEvent(e),
     });
     gameRef.current = game;
@@ -619,6 +635,7 @@ const MathFallGame: React.FC = () => {
           onTestVoice={testVoice}
           testResult={testResult}
           diagnostics={voiceRef.current?.diagnostics() ?? {}}
+          history={voiceRef.current?.history() ?? []}
           onRestartVoice={() => {
             initAudio();
             voiceRef.current?.restart();

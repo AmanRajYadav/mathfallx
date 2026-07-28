@@ -53,17 +53,20 @@ export const FluenceMark: React.FC<{ size?: number }> = ({ size = 18 }) => (
 );
 
 export const FluenceBadge: React.FC = () => (
-  <a
-    className="mf-brand"
-    href="https://fluence.study"
-    target="_blank"
-    rel="noopener noreferrer"
-  >
-    <FluenceMark size={17} />
+  <div className="mf-brand">
+    <img
+      className="mf-brand-logo"
+      src={`${import.meta.env.BASE_URL}fluence-logo.png`}
+      alt="Fluence"
+      width={22}
+      height={22}
+      loading="lazy"
+      decoding="async"
+    />
     <span>
       made with <span className="mf-brand-heart">❤️</span> by <strong>FLUENCE</strong>
     </span>
-  </a>
+  </div>
 );
 
 function Stat({ k, v, sub }: { k: string; v: React.ReactNode; sub?: string }) {
@@ -268,12 +271,13 @@ interface SettingsProps {
   onTestVoice: (phrase: string) => void;
   testResult: string;
   diagnostics: Record<string, string | number | boolean>;
+  history: string[];
   onRestartVoice: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsProps> = ({
   profile, voiceSupported, onChange, onBack, onReset, onTestVoice, testResult,
-  diagnostics, onRestartVoice,
+  diagnostics, history, onRestartVoice,
 }) => {
   const s = profile.settings;
   const [testPhrase, setTestPhrase] = React.useState('forty two');
@@ -366,6 +370,11 @@ export const SettingsScreen: React.FC<SettingsProps> = ({
             </div>
           ))}
         </div>
+        {history.length > 0 && (
+          <div className="mf-diag mf-diag--log">
+            {history.map((line, i) => <div key={i}>{line}</div>)}
+          </div>
+        )}
         <button className="mf-btn mf-btn--ghost" onClick={onRestartVoice}>
           <RotateCcw size={16} /> Restart microphone
         </button>

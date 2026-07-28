@@ -107,6 +107,17 @@ const CONFUSABLE: Record<string, string> = {
   nineteen: 'ninety', ninety: 'nineteen',
 };
 
+/** The same teen/ten pairs as CONFUSABLE, for transcripts already normalized to digits. */
+const NUMERIC_CONFUSABLE: Record<number, number> = {
+  13: 30, 30: 13,
+  14: 40, 40: 14,
+  15: 50, 50: 15,
+  16: 60, 60: 16,
+  17: 70, 70: 17,
+  18: 80, 80: 18,
+  19: 90, 90: 19,
+};
+
 type Atom =
   | { t: 'd'; v: number }
   | { t: 'teen'; v: number }
@@ -377,7 +388,16 @@ export function extractNumbers(transcript: string, opts: ExtractOptions = {}): N
   // Literal digits straight from the transcript. Chrome frequently returns
   // "42" rather than "forty two", and that is the strongest signal available.
   for (const m of transcript.matchAll(/\d+/g)) {
-    offer(parseInt(m[0], 10), 1, 'literal');
+    const v = parseInt(m[0], 10);
+    offer(v, 1, 'literal');
+
+    // The teen/ten collision survives inverse text normalization. When the
+    // engine writes "17" it has already committed to one reading of an
+    // ambiguous sound, and the word-level confusable expansion never sees it —
+    // so the numeric form needs the same treatment. Reported from play: with
+    // 7 x 10 on screen, a spoken "seventy" transcribed as "17" matched nothing.
+    const twin = NUMERIC_CONFUSABLE[v];
+    if (twin !== undefined) offer(twin, 0.66, 'teen/ten');
   }
 
   return [...best.values()].sort((a, b) => b.score - a.score);

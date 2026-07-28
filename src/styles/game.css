@@ -704,6 +704,32 @@
   filter: drop-shadow(0 0 6px rgba(255, 45, 149, 0.7));
 }
 
+/* The supplied mark is white on transparent, so it needs no recolouring —
+   just a soft glow to sit with the neon rest of the UI. */
+.mf-brand-logo {
+  height: 22px;
+  width: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.55));
+  opacity: 0.95;
+}
+
+.mf-diag--log {
+  grid-template-columns: 1fr;
+  gap: 2px;
+  max-height: 168px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.mf-diag--log > div {
+  display: block;
+  color: rgba(234, 230, 255, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Voice diagnostics readout */
 .mf-diag {
   display: grid;

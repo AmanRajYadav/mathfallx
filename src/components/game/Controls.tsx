@@ -9,7 +9,7 @@ export interface VoiceUiState {
   heard: string;
   lastMatch: number | null;
   lastMatchAt: number;
-  /** A number that was understood but is not on screen. */
+  /** A number that was understood but is not on screen. Cleared on a timer. */
   miss: number | null;
 }
 

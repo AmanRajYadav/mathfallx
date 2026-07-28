@@ -52,6 +52,7 @@ export interface SpeechAdapter {
   setLanguage(lang: string): void;
   destroy(): void;
   diagnostics?: () => Record<string, string | number | boolean>;
+  history?: () => string[];
   onHypothesis?: (h: Hypothesis) => void;
   onState?: (s: RecognizerState, detail?: string) => void;
 }
@@ -158,8 +159,16 @@ export class WebSpeechAdapter implements SpeechAdapter {
   rebuilds = 0;
   results = 0;
   errors = 0;
+  loopStalls = 0;
   lastError = '';
   lastResetReason = '';
+  /** Rolling log of what the engine actually returned, newest last. */
+  log: string[] = [];
+
+  private note(line: string): void {
+    this.log.push(`${new Date().toLocaleTimeString('en-GB', { hour12: false })} ${line}`);
+    if (this.log.length > 14) this.log.shift();
+  }
 
   constructor(lang = 'en-US') {
     this.lang = lang;
@@ -222,6 +231,8 @@ export class WebSpeechAdapter implements SpeechAdapter {
           if (typeof t === 'string' && t.trim()) alternatives.push(t.trim());
         }
         if (alternatives.length === 0) continue;
+
+        if (result.isFinal) this.note(`heard "${alternatives[0]}"`);
 
         this.onHypothesis({
           transcript: alternatives[0],
@@ -351,6 +362,7 @@ export class WebSpeechAdapter implements SpeechAdapter {
     if (this.destroyed) return;
     this.rebuilds += 1;
     this.lastResetReason = reason;
+    this.note(`rebuild (${reason})`);
 
     const old = this.rec;
     if (old) {
@@ -385,6 +397,18 @@ export class WebSpeechAdapter implements SpeechAdapter {
       if (!this.want || this.destroyed) return;
       const now = Date.now();
 
+      // The cheapest and most important check: we want to be listening, nothing
+      // is running, and no restart is queued. That combination means the
+      // restart loop has fallen out from under us — an onend that never came,
+      // a timer that got dropped — and nothing else will ever revive it.
+      // Catching it every couple of seconds bounds deafness to a blink rather
+      // than to the silence threshold below.
+      if (!this.running && this.restartTimer === null) {
+        this.loopStalls += 1;
+        this.scheduleRestart();
+        return;
+      }
+
       // Some Android builds go silent without ever firing onend: no results, no
       // errors, no end event, just a microphone that has stopped listening.
       if (now - this.lastActivity > 12_000) {
@@ -411,7 +435,7 @@ export class WebSpeechAdapter implements SpeechAdapter {
         this.sessionStart = now;
         try { this.rec?.stop(); } catch { /* onend drives the restart */ }
       }
-    }, 4000);
+    }, 2000);
   }
 
   start(): void {
@@ -456,10 +480,16 @@ export class WebSpeechAdapter implements SpeechAdapter {
       errors: this.errors,
       lastError: this.lastError || '—',
       rebuilds: this.rebuilds,
+      loopStalls: this.loopStalls,
       lastReset: this.lastResetReason || '—',
       secSinceActivity: Math.round((Date.now() - this.lastActivity) / 1000),
       lang: this.lang,
     };
+  }
+
+  /** Newest-last transcript log for the diagnostics panel. */
+  history(): string[] {
+    return this.log.slice();
   }
 
   destroy(): void {

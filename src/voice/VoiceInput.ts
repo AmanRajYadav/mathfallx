@@ -152,6 +152,11 @@ export class VoiceInput {
     };
   }
 
+  /** Newest-last log of final transcripts and recogniser rebuilds. */
+  history(): string[] {
+    return this.adapter.history?.() ?? [];
+  }
+
   /** Tells the matcher a value was acted on, suppressing immediate repeats. */
   markConsumed(value: number): void {
     // Refresh the timestamp but keep whichever utterance claimed this value.
@@ -274,11 +279,21 @@ export class VoiceInput {
     }
 
     if (this.opts.onNoMatch && this.targets.size > 0) {
-      const heard = extractNumbers(h.transcript, { min: 0, max: 9999 })
+      const heard = extractNumbers(freshest, { min: 0, max: 9999 })
         .filter((c) => c.score >= MIN_SCORE)
         .map((c) => c.value);
-      if (heard.length > 0) this.opts.onNoMatch(heard.slice(0, 3), h.transcript);
+      if (heard.length > 0) this.opts.onNoMatch(heard.slice(0, 3), freshest);
     }
+
+    // Consume the text even though nothing matched.
+    //
+    // Without this, a rejected utterance stays in the accumulated transcript
+    // forever. Say "seventeen" when 17 is not on screen, then say "seventy":
+    // Chrome extends the same result to "seventeen seventy", and every later
+    // hypothesis re-parses the dead "seventeen" alongside the new word. The
+    // stale reading keeps out-scoring, the display stays stuck on the old
+    // number, and it looks exactly like the microphone has stopped listening.
+    this.actedPrefix.set(h.utteranceId, h.transcript);
   }
 
   /**
