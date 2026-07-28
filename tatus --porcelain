@@ -1,5 +1,0 @@
-[33mcc500fb[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Increase power-up spawn frequency by 20% for better gameplay experience
-[33m5deaf68[m Implement progressive personality system: all personalities available in easy mode with wave-based difficulty progression
-[33mc6f5309[m Improve easy mode progression: reduce complexity until wave 10, complex fractions only after wave 15
-[33meb4dd65[m Fix boss/aggressive problem generation and add device vibration
-[33mdd1dea7[m Update comprehensive README with all implemented features

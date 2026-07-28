@@ -1,36 +1,67 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
-    <!-- Build timestamp: 2024-07-25T07:50:00Z -->
-    <title>MathFall - Retro Arcade Math Game</title>
-    <meta name="description" content="Destroy falling math problems in this retro-futuristic arcade game!" />
-    <meta name="author" content="amanrajyadav" />
-    
-    <!-- Favicon -->
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/site.webmanifest" />
-    
-    <!-- Import retro gaming font -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    
-    <meta property="og:title" content="MathFall - Retro Arcade Math Game" />
-    <meta property="og:description" content="Destroy falling math problems in this retro-futuristic arcade game!" />
-    <meta property="og:type" content="website" />
-    <meta property="og:image" content="/android-chrome-512x512.png" />
 
+    <!--
+      viewport-fit=cover lets the page paint under the notch and home indicator,
+      which is what makes env(safe-area-inset-*) meaningful in the stylesheet.
+      user-scalable=no + maximum-scale=1 stop a double-tap on the keypad from
+      zooming the board mid-run.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#05010f" />
+    <meta name="color-scheme" content="dark" />
+
+    <title>MathFall — Voice Math Arcade</title>
+    <meta name="description" content="Say the answer out loud to destroy falling maths problems. A synthwave arcade drill that adapts to how fast and how accurately you think." />
+    <meta name="author" content="Aman Raj Yadav" />
+
+    <!-- Installed-app behaviour on iOS, which ignores the web manifest. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="MathFall" />
+
+    <link rel="icon" type="image/x-icon" href="./favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="./favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+    <link rel="manifest" href="./site.webmanifest" />
+
+    <meta property="og:title" content="MathFall — Voice Math Arcade" />
+    <meta property="og:description" content="Say the answer out loud to destroy falling maths problems." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="./android-chrome-512x512.png" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@amanrajyadav" />
-    <meta name="twitter:image" content="/android-chrome-512x512.png" />
+    <meta name="twitter:image" content="./android-chrome-512x512.png" />
+
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #05010f;
+        overscroll-behavior: none;
+      }
+      /* Pre-hydration splash, so the first paint is the game's palette rather
+         than a white flash on a dark phone. */
+      #root:empty::after {
+        content: 'MATHFALL';
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font: 900 34px/1 ui-sans-serif, system-ui, sans-serif;
+        letter-spacing: 0.1em;
+        color: #ff2d95;
+        background: #05010f;
+      }
+    </style>
   </head>
 
   <body>
