@@ -89,3 +89,9 @@ jspm_packages/
 
 # TernJS port file
 .tern-port
+
+# Agent skills: installed artifacts and machine-absolute symlinks.
+# skills-lock.json is committed so `npx skills add` reproduces the same
+# versions; the unpacked content and the per-tool symlinks are local.
+.agents/
+.claude/skills/

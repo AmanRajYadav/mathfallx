@@ -16,7 +16,11 @@
 -- ---------------------------------------------------------------------------
 
 create table if not exists public.scores (
-  id          uuid primary key default gen_random_uuid(),
+  -- bigint identity rather than a v4 uuid: random uuids scatter inserts across
+  -- the primary key index and fragment it as the table grows. This id is never
+  -- exposed to the client — the leaderboard identifies players by player_id —
+  -- so there is nothing to gain from an unguessable key here.
+  id          bigint generated always as identity primary key,
   name        text        not null,
   score       integer     not null,
   mode        text        not null,
@@ -73,11 +77,18 @@ drop index if exists public.scores_rate_limit_idx;
 -- realistically. It defeats the trivial attack, which is the point.
 -- ---------------------------------------------------------------------------
 
+-- SECURITY DEFINER so the rate-limit count below sees every row — otherwise a
+-- player could hide their recent submissions behind RLS and bypass it.
+--
+-- search_path is pinned empty and every reference is schema-qualified. A
+-- definer function with a mutable search_path is a privilege-escalation
+-- vector: anything it resolves unqualified could be shadowed by an object in a
+-- schema the caller controls.
 create or replace function public.validate_score()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 declare
   seconds    numeric;
@@ -131,6 +142,13 @@ begin
   return new;
 end;
 $$;
+
+-- Least privilege would normally mean revoking EXECUTE from the client roles
+-- here. Deliberately not done: PostgREST does not expose functions returning
+-- `trigger`, so there is no reachable attack to close, and revoking risks
+-- breaking every insert if the privilege is rechecked at trigger firing time
+-- rather than only at CREATE TRIGGER. Not worth trading a working leaderboard
+-- for a hardening step against something that cannot be called.
 
 drop trigger if exists scores_validate on public.scores;
 create trigger scores_validate
