@@ -58,10 +58,22 @@ export interface VoiceInputOptions {
 
 /**
  * Below this, a candidate is treated as too speculative to fire on even when
- * it matches a live answer. Tuned so a clean single-word utterance always
- * passes while a number scraped out of a long sentence does not.
+ * it matches a live answer.
+ *
+ * Lowered from 0.45 after players reported having to almost shout. Quiet
+ * speech does not usually produce *no* transcript — it produces a messier one:
+ * a hesitation captured as a word, a clipped first syllable, a homophone
+ * instead of the digit. Each of those drags the score down through the
+ * homophone weight and the density factor, and the utterance was then thrown
+ * away despite naming a number that was on screen.
+ *
+ * The answer set is what makes a low threshold safe here. A speculative
+ * reading that matches nothing on screen is discarded for free, so the only
+ * cost of being generous is the rare case where a wrong reading happens to
+ * collide with a live answer — against the certain cost of ignoring someone
+ * speaking at a normal volume.
  */
-const MIN_SCORE = 0.45;
+const MIN_SCORE = 0.3;
 
 /**
  * Ignore a repeat of the same value this soon after firing it — but only when

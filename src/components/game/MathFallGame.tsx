@@ -140,6 +140,14 @@ const MathFallGame: React.FC = () => {
           playSfx(e.kind === 'boss' ? 'boss' : 'zap', e.combo);
           if (e.kind !== 'normal') playSfx('explode');
           if (haptics) vibrate(e.kind === 'boss' ? [18, 22, 30] : e.fast ? 14 : 22);
+          // Any successful destruction ends the current entry, whatever
+          // destroyed it. Previously the field only cleared when the keypad
+          // itself completed an answer, so typing "10" to kill 5x2 could leave
+          // "10" behind — and the next digit appended to it. Typing 4 for a
+          // 2x2 then produced "104", which matches nothing, and the block
+          // could not be shot at all.
+          inputRef.current = '';
+          setInput('');
           break;
         case 'armorHit':
           playSfx('armor');
@@ -178,6 +186,8 @@ const MathFallGame: React.FC = () => {
         case 'shardKill':
           playSfx('shardKill');
           if (haptics) vibrate(10);
+          inputRef.current = '';
+          setInput('');
           break;
         case 'shipHit':
           playSfx('shipHit');

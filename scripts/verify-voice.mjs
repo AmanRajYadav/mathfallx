@@ -325,6 +325,33 @@ has('50', 15);
 check('"12" has no teen/ten twin', !extractNumbers('12').some((c) => c.value === 20));
 check('"17" still prefers 17', extractNumbers('17')[0].value === 17);
 
+console.log('— messy, quiet-speech transcripts still fire —');
+
+/**
+ * Reported from play: answers only registered when almost shouted.
+ *
+ * Quiet speech rarely produces no transcript — it produces a messier one, with
+ * a hesitation captured as a word or the digit degraded to a homophone. Those
+ * must still resolve when the number is on screen.
+ */
+for (const [said, want] of [
+  ['uh four', 4],
+  ['um, forty two', 42],
+  ['er... fifteen', 15],
+  ['for', 4],
+  ['a for', 4],
+  ['mm ate', 8],
+  ['so twenty two', 22],
+  ['yeah 63', 63],
+]) {
+  check(`quiet/messy "${said}" -> ${want}`, match(said, [4, 42, 15, 8, 22, 63]) === want,
+    `got ${match(said, [4, 42, 15, 8, 22, 63])}`);
+}
+
+// Being generous must not mean firing on plain conversation.
+check('"okay lets go" fires nothing', match('okay lets go', [4, 42, 15]) === null);
+check('"what is this" fires nothing', match('what is this', [4, 42, 15]) === null);
+
 console.log('— recognizer cannot deadlock —');
 
 /**

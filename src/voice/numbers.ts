@@ -346,10 +346,16 @@ export function extractNumbers(transcript: string, opts: ExtractOptions = {}): N
     const numbers = segment(reading.atoms);
     if (numbers.length === 0) continue;
 
-    // A dense, number-only utterance is far more trustworthy than one number
-    // buried in a sentence — that is usually the recognizer picking up a
-    // stray word rather than the player answering.
-    const densityFactor = 0.55 + 0.45 * reading.density;
+    // A dense, number-only utterance is more trustworthy than one number
+    // buried in a sentence — that is usually the recognizer picking up a stray
+    // word rather than the player answering.
+    //
+    // The penalty is gentler than it was (floor 0.55 -> 0.72). Quiet or fast
+    // speech routinely picks up a filler token alongside the digit, which
+    // halved the density and pushed a perfectly good answer under the firing
+    // threshold. Ranking still prefers the clean utterance; it just no longer
+    // rejects the messy one outright.
+    const densityFactor = 0.72 + 0.28 * reading.density;
 
     for (const v of numbers) {
       offer(v, reading.weight * densityFactor, reading.via);
