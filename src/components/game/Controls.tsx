@@ -54,8 +54,12 @@ function voiceLabel(v: VoiceUiState): { label: string; tone: 'ok' | 'warn' | 'di
  * time. Six columns keeps every key a comfortable width on a 360px screen
  * while costing barely 100px of height. Digits are laid out in reading order
  * so they stay findable without looking.
+ *
+ * No submit key. An entry fires the instant its digits match something on
+ * screen, so there was never anything left for FIRE to do — it just sat there
+ * taking up a slot and implying a step that does not exist.
  */
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'del', 'go'];
+const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'del'];
 
 const Controls: React.FC<ControlsProps> = ({
   bottomRef, voice, onToggleVoice, keypadOpen, onToggleKeypad, input, onKey,
@@ -144,7 +148,7 @@ const Controls: React.FC<ControlsProps> = ({
               <button
                 key={k}
                 type="button"
-                className={'mf-key' + (k === 'del' ? ' mf-key--del' : k === 'go' ? ' mf-key--go' : '')}
+                className={'mf-key' + (k === 'del' ? ' mf-key--del' : '')}
                 onPointerDown={(e) => {
                   // pointerdown, not click: it fires ~100ms sooner, and in a
                   // timed game that gap is the difference between a fast
@@ -152,9 +156,9 @@ const Controls: React.FC<ControlsProps> = ({
                   e.preventDefault();
                   onKey(k);
                 }}
-                aria-label={k === 'del' ? 'Delete' : k === 'go' ? 'Submit answer' : k}
+                aria-label={k === 'del' ? 'Delete' : k}
               >
-                {k === 'del' ? <Delete size={19} /> : k === 'go' ? 'FIRE' : k}
+                {k === 'del' ? <Delete size={19} /> : k}
               </button>
             ))}
           </div>

@@ -377,18 +377,13 @@
   background: rgba(0, 240, 255, 0.3);
 }
 
+/* Spans the slot the submit key used to occupy, so the second row still fills
+   six columns and backspace becomes a bigger, easier target. */
 .mf-key--del {
+  grid-column: span 2;
   border-color: rgba(255, 120, 90, 0.4);
   background: linear-gradient(180deg, rgba(255, 120, 90, 0.14), rgba(12, 4, 32, 0.86));
   font-size: 18px;
-}
-
-.mf-key--go {
-  border-color: rgba(57, 255, 136, 0.45);
-  background: linear-gradient(180deg, rgba(57, 255, 136, 0.16), rgba(12, 4, 32, 0.86));
-  color: #39ff88;
-  font-size: 15px;
-  letter-spacing: 0.06em;
 }
 
 .mf-build {
