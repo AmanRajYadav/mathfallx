@@ -269,12 +269,16 @@ export const GameOverScreen: React.FC<{
   profile: Profile;
   name: string;
   submitState: SubmitState;
+  submitError: string;
   onName: (v: string) => void;
   onSubmit: () => void;
   onViewBoard: () => void;
   onAgain: () => void;
   onMenu: () => void;
-}> = ({ summary, profile, name, submitState, onName, onSubmit, onViewBoard, onAgain, onMenu }) => {
+}> = ({
+  summary, profile, name, submitState, submitError,
+  onName, onSubmit, onViewBoard, onAgain, onMenu,
+}) => {
   const delta = summary.ratingAfter - summary.ratingBefore;
   const rank = rankFor(profile.theta);
 
@@ -356,7 +360,7 @@ export const GameOverScreen: React.FC<{
                   </button>
                 </div>
                 {submitState === 'failed' && (
-                  <p className="mf-note">Couldn&rsquo;t reach the leaderboard. Your score is saved locally.</p>
+                  <p className="mf-note">{submitError || 'Submission failed.'}</p>
                 )}
               </>
             )}

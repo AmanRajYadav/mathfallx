@@ -102,9 +102,37 @@ export function sanitizeName(raw: string): string {
     .slice(0, 16);
 }
 
-export async function submitScore(p: SubmitPayload): Promise<boolean> {
+export interface SubmitResult {
+  ok: boolean;
+  /** Present when the server rejected the row rather than the request failing. */
+  reason?: string;
+}
+
+/**
+ * Turns a PostgREST error body into something a player can act on.
+ *
+ * The server rejects rows for real reasons — rate limiting, an implausible
+ * pace — and reporting all of those as "couldn't reach the leaderboard" is
+ * both wrong and unhelpful.
+ */
+function explain(status: number, body: string): string {
+  const message = (() => {
+    try { return String((JSON.parse(body) as { message?: string }).message ?? ''); }
+    catch { return body; }
+  })().toLowerCase();
+
+  if (message.includes('rate limited')) return 'Too quick — try again in a few seconds.';
+  if (message.includes('implausible')) return 'That run was rejected as implausible.';
+  if (status === 404 || message.includes('could not find the table')) {
+    return 'Leaderboard not set up yet (run supabase/schema.sql).';
+  }
+  if (status === 401 || status === 403) return 'Leaderboard rejected the request.';
+  return 'Submission failed.';
+}
+
+export async function submitScore(p: SubmitPayload): Promise<SubmitResult> {
   const name = sanitizeName(p.name);
-  if (!name || p.score <= 0) return false;
+  if (!name || p.score <= 0) return { ok: false, reason: 'Nothing to submit.' };
 
   const row: ScoreRow = {
     name,
@@ -126,9 +154,11 @@ export async function submitScore(p: SubmitPayload): Promise<boolean> {
       headers: { ...headers(), Prefer: 'return=minimal' },
       body: JSON.stringify(row),
     });
-    return res.ok;
+    if (res.ok) return { ok: true };
+    const body = await res.text().catch(() => '');
+    return { ok: false, reason: explain(res.status, body) };
   } catch {
-    return false;
+    return { ok: false, reason: 'No connection. Your score is saved locally.' };
   }
 }
 

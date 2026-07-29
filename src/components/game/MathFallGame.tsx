@@ -612,6 +612,7 @@ const MathFallGame: React.FC = () => {
   const [boardName, setBoardName] = useState(() => profileRef.current.name);
   const [boardMode, setBoardMode] = useState<GameMode>('arcade');
   const [submitState, setSubmitState] = useState<SubmitState>('idle');
+  const [submitError, setSubmitError] = useState('');
 
   const submitRun = useCallback(() => {
     const s = summary;
@@ -634,9 +635,10 @@ const MathFallGame: React.FC = () => {
       rating: s.ratingAfter,
       voiceShare: s.voiceShare,
       durationMs: s.durationMs,
-    }).then((ok) => {
-      setSubmitState(ok ? 'done' : 'failed');
-      if (ok) { setBoardMode(s.mode); playSfx('wave'); }
+    }).then((res) => {
+      setSubmitState(res.ok ? 'done' : 'failed');
+      setSubmitError(res.reason ?? '');
+      if (res.ok) { setBoardMode(s.mode); playSfx('wave'); }
     });
   }, [summary, boardName, hud.wave]);
 
@@ -733,6 +735,7 @@ const MathFallGame: React.FC = () => {
           profile={profile}
           name={boardName}
           submitState={submitState}
+          submitError={submitError}
           onName={setBoardName}
           onSubmit={submitRun}
           onViewBoard={() => { setBoardMode(summary.mode); setScreenBoth('board'); }}
