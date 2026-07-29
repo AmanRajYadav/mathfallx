@@ -593,6 +593,10 @@ export const SettingsScreen: React.FC<SettingsProps> = ({
           </div>
         </div>
 
+        {/* So "am I actually running the new version?" is answerable on a
+            phone, where a stale cache looks exactly like a fix that failed. */}
+        <div className="mf-build">build {__BUILD_ID__} · {__BUILD_TIME__} UTC</div>
+
         <button className="mf-btn mf-btn--primary" onClick={onBack}>
           <ArrowLeft size={18} /> Done
         </button>

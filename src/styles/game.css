@@ -391,6 +391,14 @@
   letter-spacing: 0.06em;
 }
 
+.mf-build {
+  text-align: center;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: rgba(234, 230, 255, 0.3);
+}
+
 /* Rating trend */
 .mf-spark {
   border-radius: 13px;

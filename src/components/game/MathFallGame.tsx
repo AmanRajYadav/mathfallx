@@ -695,6 +695,18 @@ const MathFallGame: React.FC = () => {
           if (g.activateAt(e.clientX - rect.left, e.clientY - rect.top)) {
             initAudio();
             e.preventDefault();
+            return;
+          }
+          // Anywhere else on the board wipes the entry. A wrong number left in
+          // the field blocks everything typed after it, and hunting for a
+          // specific small target to fix that — while blocks are falling — is
+          // the opposite of what the moment calls for. The whole play area is
+          // the undo button.
+          if (inputRef.current) {
+            inputRef.current = '';
+            setInput('');
+            playSfx('tick');
+            if (profileRef.current.settings.haptics) vibrate(8);
           }
         }}
       />
