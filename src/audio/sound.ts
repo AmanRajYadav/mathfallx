@@ -17,7 +17,7 @@
 export type Sfx =
   | 'zap' | 'explode' | 'boss' | 'armor' | 'reject'
   | 'miss' | 'wave' | 'overdrive' | 'tick' | 'ui'
-  | 'shard' | 'shardKill' | 'shipHit';
+  | 'shard' | 'shardKill' | 'shipHit' | 'praise' | 'record';
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
@@ -204,6 +204,27 @@ function playSfxUnsafe(name: Sfx, intensity: number): void {
     case 'wave':
       tone(392, 784, 0.22, 'triangle', 0.14);
       tone(523, 1046, 0.26, 'triangle', 0.11, 0.09);
+      break;
+    case 'praise': {
+      // A rising major arpeggio. `intensity` is the tier, so bigger praise
+      // literally sounds higher and longer.
+      const root = 523 * Math.pow(2, Math.min(3, intensity) / 12);
+      const steps = [0, 4, 7, 12];
+      for (let i = 0; i <= Math.min(3, intensity); i++) {
+        const f = root * Math.pow(2, steps[i] / 12);
+        tone(f, f, 0.16, 'triangle', 0.16, i * 0.055);
+      }
+      break;
+    }
+    case 'record':
+      // Deliberately the biggest sound in the game.
+      for (const [i, semi] of [0, 4, 7, 12, 16, 19].entries()) {
+        const f = 523 * Math.pow(2, semi / 12);
+        tone(f, f, 0.5, 'triangle', 0.2, i * 0.07);
+        tone(f * 2, f * 2, 0.35, 'sine', 0.1, i * 0.07);
+      }
+      noise(0.5, 0.2, 9000, 2000);
+      tone(131, 131, 0.9, 'sawtooth', 0.16);
       break;
     case 'overdrive':
       tone(220, 1760, 0.55, 'sawtooth', 0.16);

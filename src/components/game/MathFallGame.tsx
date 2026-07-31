@@ -18,7 +18,7 @@ import {
   GameOverScreen, LeaderboardScreen, PauseScreen, SettingsScreen, StatsScreen,
   TitleScreen, type Screen, type SubmitState,
 } from './Overlays';
-import { submitScore } from '../../net/leaderboard';
+import { fetchRank, submitScore } from '../../net/leaderboard';
 import '../../styles/game.css';
 
 const EMPTY_HUD: HudState = {
@@ -168,6 +168,16 @@ const MathFallGame: React.FC = () => {
         case 'overdrive':
           playSfx('overdrive');
           if (haptics) vibrate([25, 20, 25, 20, 45]);
+          break;
+        case 'praise': {
+          const tiers = { good: 0, great: 1, amazing: 2, legendary: 3 } as const;
+          playSfx('praise', tiers[e.tier]);
+          if (haptics && (e.tier === 'amazing' || e.tier === 'legendary')) vibrate([14, 30, 14]);
+          break;
+        }
+        case 'record':
+          playSfx('record');
+          if (haptics) vibrate([40, 40, 40, 40, 90]);
           break;
         case 'collect':
           playSfx('ui');
@@ -363,6 +373,7 @@ const MathFallGame: React.FC = () => {
     setInput('');
     setSummary(null);
     setSubmitState('idle');
+    setPlacement(null);
     setVoiceUi((v) => ({ ...v, heard: '', lastMatch: null, lastMatchAt: 0, miss: null }));
     setScreenBoth('playing');
     game.start(mode, skills);
@@ -623,6 +634,7 @@ const MathFallGame: React.FC = () => {
   const [boardMode, setBoardMode] = useState<GameMode>('arcade');
   const [submitState, setSubmitState] = useState<SubmitState>('idle');
   const [submitError, setSubmitError] = useState('');
+  const [placement, setPlacement] = useState<number | null>(null);
 
   const submitRun = useCallback(() => {
     const s = summary;
@@ -648,7 +660,12 @@ const MathFallGame: React.FC = () => {
     }).then((res) => {
       setSubmitState(res.ok ? 'done' : 'failed');
       setSubmitError(res.reason ?? '');
-      if (res.ok) { setBoardMode(s.mode); playSfx('wave'); }
+      if (!res.ok) return;
+      setBoardMode(s.mode);
+      playSfx('record');
+      // Report the placement straight away. "You're 4th" is the answer the
+      // player actually wanted when they typed their name.
+      void fetchRank(s.mode, name).then(setPlacement).catch(() => setPlacement(null));
     });
   }, [summary, boardName, hud.wave]);
 
@@ -758,6 +775,7 @@ const MathFallGame: React.FC = () => {
           name={boardName}
           submitState={submitState}
           submitError={submitError}
+          placement={placement}
           onName={setBoardName}
           onSubmit={submitRun}
           onViewBoard={() => { setBoardMode(summary.mode); setScreenBoth('board'); }}

@@ -24,6 +24,7 @@ import {
 } from './adaptive';
 import { generateDailySet, generateItem, type Item, type Skill } from './generator';
 import { POWER_UPS, dropChance, rollPowerUp, type PowerUpType } from './powerups';
+import { praiseForCombo, praiseForSpeed, type PraiseTier } from './praise';
 import { Rng, dailySeed } from './rng';
 import {
   adaptiveStateOf,
@@ -172,6 +173,8 @@ export type GameEvent =
   | { type: 'miss' }
   | { type: 'wave'; wave: number }
   | { type: 'overdrive' }
+  | { type: 'praise'; tier: PraiseTier }
+  | { type: 'record'; score: number; previous: number }
   | { type: 'shard' }
   | { type: 'shardKill' }
   | { type: 'shipHit' }
@@ -483,6 +486,8 @@ export class GameCore {
   effectBudget = 1;
   /** Exponential moving average of frame time, ms. */
   avgFrameMs = 0;
+  /** One record banner per run, however far past the old best you go. */
+  private recordAnnounced = false;
 
   // --------------------------------------------------------------- power-ups
 
@@ -618,6 +623,7 @@ export class GameCore {
     this.flash = 0;
     this.timeScale = 1;
     this.pressure = 1;
+    this.recordAnnounced = false;
 
     this.solved = 0;
     this.missed = 0;
@@ -913,6 +919,7 @@ export class GameCore {
 
       this.addPopup(cx, block.y, `+${gain}`, block.hue, heavy || fast);
       this.dropFor(block);
+      this.celebrate(fast);
       if (this.combo > 0 && this.combo % 5 === 0) {
         this.addPopup(this.width / 2, this.playBottom - 130, `${this.combo} CHAIN`, 320, true);
       }
@@ -936,6 +943,41 @@ export class GameCore {
 
     block.dying = 1;
     this.hudDirty = true;
+  }
+
+  /**
+   * Praise and record banners.
+   *
+   * Beating your own best is the most meaningful thing that happens in a run,
+   * and until now it was only revealed on the summary screen after you had
+   * already died — by which point the moment has passed. It is announced live.
+   */
+  private celebrate(fast: boolean): void {
+    const rand = () => this.rng.next();
+    const banner = this.playBottom - 210;
+
+    // Record first, so it never gets buried under a routine combo line.
+    const best = this.profile.modes[this.config.mode].bestScore;
+    if (!this.recordAnnounced && best > 0 && this.score > best) {
+      this.recordAnnounced = true;
+      this.addPopup(this.width / 2, banner, 'NEW RECORD', 45, true);
+      this.burst(this.width / 2, banner, Math.round(60 * this.effectBudget), 45, 1.6);
+      this.ring(this.width / 2, banner, 260, 45, 5);
+      this.flash = Math.max(this.flash, 0.45);
+      this.applyShake(12, 0, -1);
+      this.emit({ type: 'record', score: this.score, previous: best });
+      return;
+    }
+
+    const line = praiseForCombo(this.combo, rand)
+      ?? (fast && this.combo >= 3 && rand() < 0.18 ? praiseForSpeed(rand) : null);
+    if (!line) return;
+
+    this.addPopup(this.width / 2, banner, line.text, line.hue, true);
+    if (line.tier === 'amazing' || line.tier === 'legendary') {
+      this.burst(this.width / 2, banner, Math.round(26 * this.effectBudget), line.hue, 1.1);
+    }
+    this.emit({ type: 'praise', tier: line.tier });
   }
 
   private multiplier(): number {

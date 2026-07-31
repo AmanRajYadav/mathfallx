@@ -165,8 +165,17 @@ export async function submitScore(p: SubmitPayload): Promise<SubmitResult> {
 export interface LeaderboardResult {
   status: LeaderboardStatus;
   rows: ScoreRow[];
-  /** Index of this device's own row, or -1. */
+  /** Index of the highlighted row, or -1. */
   selfIndex: number;
+}
+
+/** Where a name places in a mode, 1-based. Null when it is not on the board. */
+export async function fetchRank(mode: string, name: string): Promise<number | null> {
+  const board = await fetchTop(mode, 200, name);
+  if (board.status !== 'ok') return null;
+  const key = sanitizeName(name).toLowerCase();
+  const i = board.rows.findIndex((r) => r.name.toLowerCase() === key);
+  return i === -1 ? null : i + 1;
 }
 
 /**
@@ -176,8 +185,13 @@ export interface LeaderboardResult {
  * best. Falls back to the raw table if the view is missing, so the feature
  * still works on a project where only the table was created.
  */
-export async function fetchTop(mode: string, limit = 25): Promise<LeaderboardResult> {
+export async function fetchTop(
+  mode: string,
+  limit = 25,
+  highlightName?: string,
+): Promise<LeaderboardResult> {
   const me = playerId();
+  const wanted = highlightName ? sanitizeName(highlightName).toLowerCase() : '';
   const query = `select=*&mode=eq.${encodeURIComponent(mode)}&order=score.desc,created_at.asc&limit=${limit}`;
 
   for (const source of ['leaderboard', 'scores']) {
@@ -186,11 +200,12 @@ export async function fetchTop(mode: string, limit = 25): Promise<LeaderboardRes
       if (!res.ok) continue;
       const rows = (await res.json()) as ScoreRow[];
       const deduped = source === 'scores' ? dedupe(rows) : rows;
-      return {
-        status: 'ok',
-        rows: deduped,
-        selfIndex: deduped.findIndex((r) => r.player_id === me),
-      };
+      // Highlight by name when one is given: a shared device now carries
+      // several players, so "this device" no longer identifies a person.
+      const selfIndex = wanted
+        ? deduped.findIndex((r) => r.name.toLowerCase() === wanted)
+        : deduped.findIndex((r) => r.player_id === me);
+      return { status: 'ok', rows: deduped, selfIndex };
     } catch {
       // Network failure rather than a missing view — no point trying the
       // fallback source over the same dead connection.
@@ -203,11 +218,18 @@ export async function fetchTop(mode: string, limit = 25): Promise<LeaderboardRes
   return { status: 'error', rows: [], selfIndex: -1 };
 }
 
+/**
+ * Fallback dedupe for when the `leaderboard` view is missing.
+ *
+ * Keyed on device *and* name, matching the view. Keying on device alone meant
+ * a shared phone could only hold one entry, so classmates overwrote each other.
+ */
 function dedupe(rows: ScoreRow[]): ScoreRow[] {
   const best = new Map<string, ScoreRow>();
   for (const r of rows) {
-    const prev = best.get(r.player_id);
-    if (!prev || r.score > prev.score) best.set(r.player_id, r);
+    const key = `${r.player_id}::${r.name.toLowerCase()}`;
+    const prev = best.get(key);
+    if (!prev || r.score > prev.score) best.set(key, r);
   }
   return [...best.values()].sort((a, b) => b.score - a.score);
 }

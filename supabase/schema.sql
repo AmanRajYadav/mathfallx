@@ -183,14 +183,25 @@ create policy "anyone can submit"
 -- Ranked view: one best row per player per mode
 -- ---------------------------------------------------------------------------
 
+-- Deduplicated on (mode, player_id, name), NOT on player_id alone.
+--
+-- player_id identifies a *device*, not a person. Keying on it meant one phone
+-- could only ever hold one row per mode, so a class sharing a teacher's handset
+-- overwrote each other — a student's score vanished the moment the next person
+-- played. Reported exactly that way.
+--
+-- Including the name gives every player their own row while still collapsing
+-- their repeat runs to a personal best. Two people on different devices who
+-- pick the same name stay separate, which is the safer failure: a shared row
+-- between strangers would be worse than a duplicate name in the list.
 drop view if exists public.leaderboard;
 create view public.leaderboard
 with (security_invoker = true)   -- honour the caller's RLS, not the owner's
 as
-select distinct on (mode, player_id)
+select distinct on (mode, player_id, name)
   mode, player_id, name, score, wave, solved, accuracy, best_combo,
   rating, voice_share, duration_ms, created_at
 from public.scores
-order by mode, player_id, score desc, created_at asc;
+order by mode, player_id, name, score desc, created_at asc;
 
 grant select on public.leaderboard to anon, authenticated;

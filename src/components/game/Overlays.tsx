@@ -270,13 +270,15 @@ export const GameOverScreen: React.FC<{
   name: string;
   submitState: SubmitState;
   submitError: string;
+  /** Placement on the board after a successful save, if known. */
+  placement: number | null;
   onName: (v: string) => void;
   onSubmit: () => void;
   onViewBoard: () => void;
   onAgain: () => void;
   onMenu: () => void;
 }> = ({
-  summary, profile, name, submitState, submitError,
+  summary, profile, name, submitState, submitError, placement,
   onName, onSubmit, onViewBoard, onAgain, onMenu,
 }) => {
   const delta = summary.ratingAfter - summary.ratingBefore;
@@ -299,6 +301,64 @@ export const GameOverScreen: React.FC<{
           </div>
           {summary.isRecord && <Trophy size={30} color="#ffe66d" />}
         </div>
+
+        {/*
+          Name first, before the stats.
+          The moment a run ends is the only moment anyone cares enough to type
+          their name, and on a shared classroom phone the next player is
+          already reaching for it. Burying the field under six stat tiles meant
+          it was routinely missed.
+        */}
+        {summary.score > 0 && (
+          submitState === 'done' ? (
+            <div className="mf-placed">
+              {placement !== null ? (
+                <>
+                  <span className="mf-placed-rank">#{placement}</span>
+                  <span className="mf-placed-text">
+                    {name} on the {summary.mode} board
+                  </span>
+                </>
+              ) : (
+                <span className="mf-placed-text">Saved as {name}</span>
+              )}
+              <button className="mf-btn mf-btn--ghost" onClick={onViewBoard}>
+                <Trophy size={16} /> View leaderboard
+              </button>
+            </div>
+          ) : (
+            <div className="mf-save">
+              <div className="mf-h2">Save your score</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  className="mf-select"
+                  style={{ flex: 1, maxWidth: 'none' }}
+                  value={name}
+                  maxLength={16}
+                  autoFocus
+                  placeholder="Your name"
+                  onChange={(e) => onName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && name.trim()) onSubmit(); }}
+                  aria-label="Leaderboard name"
+                />
+                <button
+                  className="mf-btn mf-btn--primary"
+                  style={{ width: 'auto', padding: '0 18px', minHeight: 46 }}
+                  disabled={!name.trim() || submitState === 'sending'}
+                  onClick={onSubmit}
+                >
+                  {submitState === 'sending' ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+              {submitState === 'failed' && (
+                <p className="mf-note">{submitError || 'Submission failed.'}</p>
+              )}
+              <p className="mf-row-hint">
+                Playing on a shared phone? Each name keeps its own place.
+              </p>
+            </div>
+          )
+        )}
 
         <div className="mf-grid2">
           <Stat k="Solved" v={summary.solved} />
@@ -328,44 +388,6 @@ export const GameOverScreen: React.FC<{
             </div>
           </div>
         </div>
-
-        {/* Submission is opt-in and asked for once. A name box that appears
-            before the player has any reason to care is just friction. */}
-        {summary.score > 0 && (
-          <>
-            <div className="mf-h2">Global leaderboard</div>
-            {submitState === 'done' ? (
-              <button className="mf-btn mf-btn--ghost" onClick={onViewBoard}>
-                <Trophy size={17} /> Submitted — view the board
-              </button>
-            ) : (
-              <>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    className="mf-select"
-                    style={{ flex: 1, maxWidth: 'none' }}
-                    value={name}
-                    maxLength={16}
-                    placeholder="Your name"
-                    onChange={(e) => onName(e.target.value)}
-                    aria-label="Leaderboard name"
-                  />
-                  <button
-                    className="mf-btn mf-btn--ghost"
-                    style={{ width: 'auto', padding: '0 16px' }}
-                    disabled={!name.trim() || submitState === 'sending'}
-                    onClick={onSubmit}
-                  >
-                    {submitState === 'sending' ? 'Sending…' : 'Submit'}
-                  </button>
-                </div>
-                {submitState === 'failed' && (
-                  <p className="mf-note">{submitError || 'Submission failed.'}</p>
-                )}
-              </>
-            )}
-          </>
-        )}
 
         <button className="mf-btn mf-btn--primary" onClick={onAgain}>
           <RotateCcw size={19} /> Play again
