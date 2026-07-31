@@ -220,7 +220,25 @@ export interface ModeConfig {
   ratingCap?: number;
   /** Suppresses the harder block kinds. */
   plainBlocksOnly?: boolean;
+  /**
+   * Start at the player's measured ability instead of ramping up to it.
+   *
+   * Only Practice does this. Everywhere else a run opens easy and climbs,
+   * because arriving at your ceiling on wave one is where the sense of
+   * progression goes.
+   */
+  adaptiveStart?: boolean;
+  /** Waves taken to climb from the opening difficulty to the player's level. */
+  rampWaves?: number;
 }
+
+/**
+ * Where every non-Practice run begins, on the Elo scale.
+ *
+ * Roughly single-digit sums — deliberately trivial for anyone who has played
+ * before. The first wave is not there to test you.
+ */
+const RUN_FLOOR = 760;
 
 export const MODES: Record<GameMode, ModeConfig> = {
   // Easy is a genuine floor, not just a slower arcade: answers stay under 20,
@@ -229,12 +247,25 @@ export const MODES: Record<GameMode, ModeConfig> = {
   // them removes two difficulties at once.
   easy: {
     mode: 'easy', shield: 5, duration: null, total: null, speed: 0.7, concurrency: 3,
-    maxAnswer: 20, ratingCap: 900, plainBlocksOnly: true,
+    maxAnswer: 20, ratingCap: 900, plainBlocksOnly: true, rampWaves: 10,
   },
-  arcade: { mode: 'arcade', shield: 3, duration: null, total: null, speed: 1, concurrency: 3 },
+  arcade: {
+    mode: 'arcade', shield: 3, duration: null, total: null, speed: 1, concurrency: 3,
+    rampWaves: 8,
+  },
   daily: { mode: 'daily', shield: 3, duration: null, total: 40, speed: 1, concurrency: 3 },
-  blitz: { mode: 'blitz', shield: 99, duration: 60, total: null, speed: 1.1, concurrency: 4 },
-  zen: { mode: 'zen', shield: 99, duration: null, total: null, speed: 0.78, concurrency: 3 },
+  // A 60-second run has no time for a long climb, so it ramps roughly twice
+  // as fast — still a climb, just a compressed one.
+  blitz: {
+    mode: 'blitz', shield: 99, duration: 60, total: null, speed: 1.1, concurrency: 4,
+    rampWaves: 4,
+  },
+  // The one mode that meets you where you are. Practice exists to work on
+  // what you are currently bad at, so easing in would waste most of it.
+  zen: {
+    mode: 'zen', shield: 99, duration: null, total: null, speed: 0.78, concurrency: 3,
+    adaptiveStart: true,
+  },
 };
 
 const MAX_PARTICLES = 420;
@@ -1015,15 +1046,50 @@ export class GameCore {
       return item;
     }
 
-    let base = overrideTarget ?? targetDifficulty(this.profile.theta);
+    /*
+     * Difficulty for the next item.
+     *
+     * The rating is a measure of ability, not a starting position. Using it
+     * directly as the opening difficulty meant one strong run permanently
+     * raised where every future run began: you arrived at your ceiling on wave
+     * one, every game looked the same, and the climb that makes an arcade
+     * satisfying simply stopped existing. Worse, a single lucky session locked
+     * in a level that then had to be re-earned before the game felt playable
+     * again — punishing the exact thing it should reward.
+     *
+     * So every mode except Practice opens at RUN_FLOOR and climbs toward the
+     * player's level over `rampWaves`. Ability still shapes the run, but as
+     * the *slope*: a strong player reaches hard problems in a few waves rather
+     * than being handed them immediately, and passes their old ceiling if they
+     * keep going. Wave one is easy for everyone, every time.
+     */
+    let base: number;
+    const ceiling = targetDifficulty(this.profile.theta);
+
+    if (overrideTarget !== undefined) {
+      base = overrideTarget;
+    } else if (this.config.adaptiveStart) {
+      // Practice: meet the player at their level from the first problem.
+      base = ceiling + Math.min(220, (this.wave - 1) * 22);
+    } else {
+      const ramp = this.config.rampWaves ?? 8;
+      const floor = Math.min(RUN_FLOOR, ceiling);
+      const t = Math.min(1, (this.wave - 1) / ramp);
+      // Ease-in: the first few waves stay gentle, then it picks up. A linear
+      // climb spends too long in the middle, which is the least interesting
+      // part of the range.
+      base = floor + (ceiling - floor) * (t * t * (3 - 2 * t));
+      // Past the ramp it keeps creeping, so a long run never plateaus and a
+      // good player can genuinely outgrow their old best within one game.
+      base += Math.max(0, this.wave - ramp) * 24;
+    }
+
     const jitter = this.rng.gaussian(0, 90);
-    let waveLift = Math.min(220, (this.wave - 1) * 22);
 
     // Easy mode ignores a high rating on purpose. Someone who wants small
     // numbers wants small numbers, not the difficulty their history earned.
     if (this.config.ratingCap !== undefined) {
       base = Math.min(base, this.config.ratingCap);
-      waveLift = Math.min(waveLift, 80);
     }
 
     let skills = this.config.skills;
@@ -1044,7 +1110,7 @@ export class GameCore {
 
     return generateItem({
       rng: this.rng,
-      targetRating: base + jitter + waveLift,
+      targetRating: base + jitter,
       ratings: this.profile.templateRatings,
       skills,
       exclude,
