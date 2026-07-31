@@ -15,8 +15,8 @@ import {
 import Hud from './Hud';
 import Controls, { type VoiceUiState } from './Controls';
 import {
-  GameOverScreen, LeaderboardScreen, PauseScreen, SettingsScreen, StatsScreen,
-  TitleScreen, type Screen, type SubmitState,
+  GameOverScreen, LeaderboardScreen, PauseScreen, RanksScreen, SettingsScreen,
+  StatsScreen, TitleScreen, type Screen, type SubmitState,
 } from './Overlays';
 import { fetchRank, submitScore } from '../../net/leaderboard';
 import '../../styles/game.css';
@@ -809,6 +809,10 @@ const MathFallGame: React.FC = () => {
             setTestResult('Microphone restarted.');
           }}
         />
+      )}
+
+      {screen === 'ranks' && (
+        <RanksScreen profile={profile} onBack={() => setScreenBoth('title')} />
       )}
 
       {screen === 'stats' && (

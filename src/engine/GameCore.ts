@@ -1084,7 +1084,21 @@ export class GameCore {
       base += Math.max(0, this.wave - ramp) * 24;
     }
 
-    const jitter = this.rng.gaussian(0, 90);
+    // Variety within a wave, but tight at the very start. A flat spread put
+    // the occasional two-digit sum on wave one, which undoes the whole point
+    // of opening gently — the first wave should be unmistakably easy, not
+    // easy on average.
+    const rampProgress = this.config.adaptiveStart
+      ? 1
+      : Math.min(1, (this.wave - 1) / (this.config.rampWaves ?? 8));
+    const jitter = this.rng.gaussian(0, 35 + 55 * rampProgress);
+
+    // Template selection narrows early too. The picker weights templates by a
+    // Gaussian on their distance from the target, and at the default width a
+    // template 240 points away still draws a fifth of the weight — enough to
+    // put two-digit addition on wave one. Widening it later is deliberate:
+    // variety matters more once the player is warmed up.
+    const spread = 110 + 80 * rampProgress;
 
     // Easy mode ignores a high rating on purpose. Someone who wants small
     // numbers wants small numbers, not the difficulty their history earned.
@@ -1114,6 +1128,7 @@ export class GameCore {
       ratings: this.profile.templateRatings,
       skills,
       exclude,
+      spread,
       // Three-digit answers are a mouthful mid-arcade, so keep them rare and
       // only once the player has earned them.
       maxAnswer: this.config.maxAnswer ?? (this.profile.theta > 1500 ? 999 : 200),

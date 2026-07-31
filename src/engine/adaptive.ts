@@ -197,27 +197,68 @@ export function weakestSkill(state: AdaptiveState, minSeen = 6): Skill | null {
   return worst;
 }
 
+export interface Rank {
+  /** 1-based position on the ladder. */
+  tier: number;
+  name: string;
+  /** Rating at which this rank is reached. */
+  at: number;
+  color: string;
+  /** What arithmetic a player at this level is actually handling. */
+  blurb: string;
+}
+
 /**
- * A coarse label for the rating, shown in the UI. Players understand "Gold II"
- * far better than "1418".
+ * The rank ladder: twenty tiers from a first correct answer to mastery.
+ *
+ * Twenty rather than eight because a rank you hold for months stops being
+ * progress and becomes furniture. The gaps widen as they climb — 85 points
+ * early, 120 near the top — so early promotions come quickly enough to feel
+ * like momentum, while the last few have to be earned.
+ *
+ * Each carries a plain description of the maths involved. "Prism" means
+ * nothing on its own; "two-digit sums with carries, times tables to 12" tells
+ * a student exactly what they have got good at, which is the part worth
+ * knowing.
  */
-export function rankFor(theta: number): { name: string; tier: number; color: string; next: number | null } {
-  const bands: Array<[number, string, string]> = [
-    [0, 'INITIATE', '#8b93b0'],
-    [900, 'CIRCUIT', '#4ce0ff'],
-    [1100, 'VECTOR', '#39ff88'],
-    [1300, 'PRISM', '#ffd34d'],
-    [1500, 'NEON', '#ff8a3d'],
-    [1700, 'CIPHER', '#ff2d95'],
-    [1900, 'SINGULARITY', '#c17bff'],
-    [2150, 'TRANSCENDENT', '#ffffff'],
-  ];
+export const RANKS: Rank[] = [
+  { tier: 1,  name: 'SPARK',        at: 0,    color: '#8b93b0', blurb: 'First signal. Everyone starts here.' },
+  { tier: 2,  name: 'EMBER',        at: 700,  color: '#ff9f6e', blurb: 'Single-digit sums, taken steadily.' },
+  { tier: 3,  name: 'CIRCUIT',      at: 785,  color: '#ffb03a', blurb: 'Small sums answered without counting.' },
+  { tier: 4,  name: 'RELAY',        at: 870,  color: '#ffd34d', blurb: 'Adding with carries. Small times tables.' },
+  { tier: 5,  name: 'VECTOR',       at: 955,  color: '#d8f04a', blurb: 'Two-digit addition, comfortably.' },
+  { tier: 6,  name: 'LATTICE',      at: 1040, color: '#7fe86b', blurb: 'Subtraction with borrows. Squares.' },
+  { tier: 7,  name: 'PRISM',        at: 1130, color: '#39ff88', blurb: 'Times tables to 12, recalled not derived.' },
+  { tier: 8,  name: 'CASCADE',      at: 1220, color: '#2ce8b4', blurb: 'Division facts. Roots of perfect squares.' },
+  { tier: 9,  name: 'NEON',         at: 1310, color: '#00f0ff', blurb: 'Three-term sums held in your head.' },
+  { tier: 10, name: 'PULSAR',       at: 1400, color: '#4cc4ff', blurb: 'Two-digit by one-digit multiplication.' },
+  { tier: 11, name: 'CIPHER',       at: 1495, color: '#6ea8ff', blurb: 'Longer division, cleanly.' },
+  { tier: 12, name: 'NEBULA',       at: 1590, color: '#8f8cff', blurb: 'Mixed operations in the right order.' },
+  { tier: 13, name: 'QUANTUM',      at: 1685, color: '#a97bff', blurb: 'Multi-step arithmetic at speed.' },
+  { tier: 14, name: 'ZENITH',       at: 1785, color: '#c17bff', blurb: 'Bracketed expressions, no hesitation.' },
+  { tier: 15, name: 'ECLIPSE',      at: 1885, color: '#dd6fe8', blurb: 'Squares past the teens.' },
+  { tier: 16, name: 'NOVA',         at: 1990, color: '#ff5ec4', blurb: 'Two-digit by two-digit multiplication.' },
+  { tier: 17, name: 'HORIZON',      at: 2095, color: '#ff2d95', blurb: 'Hard problems answered on reflex.' },
+  { tier: 18, name: 'SINGULARITY',  at: 2205, color: '#ff6b6b', blurb: 'Faster than most people can read.' },
+  { tier: 19, name: 'ASCENDANT',    at: 2320, color: '#ffd34d', blurb: 'The generator is running out of ideas.' },
+  { tier: 20, name: 'TRANSCENDENT', at: 2440, color: '#ffffff', blurb: 'Nothing left to prove.' },
+];
+
+export interface RankState extends Rank {
+  /** Rating needed for the next rank, or null at the top. */
+  next: number | null;
+  /** 0-1 progress toward the next rank. */
+  progress: number;
+}
+
+/** The rank a rating currently sits in, with progress toward the next. */
+export function rankFor(theta: number): RankState {
   let idx = 0;
-  for (let i = 0; i < bands.length; i++) if (theta >= bands[i][0]) idx = i;
-  return {
-    name: bands[idx][1],
-    tier: idx,
-    color: bands[idx][2],
-    next: idx + 1 < bands.length ? bands[idx + 1][0] : null,
-  };
+  for (let i = 0; i < RANKS.length; i++) if (theta >= RANKS[i].at) idx = i;
+  const current = RANKS[idx];
+  const next = idx + 1 < RANKS.length ? RANKS[idx + 1] : null;
+  const progress = next
+    ? Math.max(0, Math.min(1, (theta - current.at) / (next.at - current.at)))
+    : 1;
+  return { ...current, next: next ? next.at : null, progress };
 }

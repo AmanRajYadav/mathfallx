@@ -320,10 +320,29 @@ function pickTemplate(o: GenerateOptions): Template {
   let total = 0;
   const weights = candidates.map((t) => {
     const d = (ratingOf(t, o.ratings) - o.targetRating) / spread;
-    const w = Math.exp(-d * d) + 0.004; // floor keeps every template reachable
+    // Pure Gaussian, with no flat floor.
+    //
+    // A floor of 0.004 sounds harmless and is not: across nineteen templates
+    // it made roughly seven percent of picks uniform over the entire
+    // difficulty range, so a target of 760 still occasionally served
+    // two-digit multiplication. On wave one of a gentle ramp that is the
+    // single most visible thing in the game, and it undid the ramp entirely.
+    const w = Math.exp(-d * d);
     total += w;
     return w;
   });
+
+  // Every template is far from the target — pick the nearest rather than
+  // dividing by zero. Only reachable at the extremes of the rating range.
+  if (total < 1e-9) {
+    let best = candidates[0];
+    let bestDist = Infinity;
+    for (const t of candidates) {
+      const dist = Math.abs(ratingOf(t, o.ratings) - o.targetRating);
+      if (dist < bestDist) { bestDist = dist; best = t; }
+    }
+    return best;
+  }
 
   let roll = o.rng.next() * total;
   for (let i = 0; i < candidates.length; i++) {

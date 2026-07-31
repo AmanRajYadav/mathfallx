@@ -394,6 +394,131 @@
   color: rgba(234, 230, 255, 0.3);
 }
 
+/* Title hero: score leads, rank follows */
+.mf-hero {
+  border-radius: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(12, 8, 30, 0.72);
+  padding: 13px 15px 12px;
+}
+
+.mf-hero-score {
+  font-size: 40px;
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  text-shadow: 0 0 22px rgba(0, 240, 255, 0.35);
+}
+
+.mf-hero-rank {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-top: 10px;
+  padding: 8px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.mf-hero-tier {
+  display: block;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.mf-hero-sub {
+  display: block;
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(234, 230, 255, 0.45);
+}
+
+/* Rank ladder */
+.mf-ranks {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 52vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 2px;
+}
+
+.mf-rankrow {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.02);
+  opacity: 0.5;
+}
+
+.mf-rankrow--on {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--rk) 35%, transparent);
+  background: color-mix(in srgb, var(--rk) 8%, rgba(10, 8, 26, 0.7));
+}
+
+.mf-rankrow--now {
+  border-color: var(--rk);
+  background: color-mix(in srgb, var(--rk) 16%, rgba(10, 8, 26, 0.8));
+  box-shadow: 0 0 18px color-mix(in srgb, var(--rk) 30%, transparent);
+}
+
+.mf-rankrow-tier {
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: rgba(234, 230, 255, 0.45);
+}
+
+.mf-rankrow--on .mf-rankrow-tier { color: var(--rk); }
+.mf-rankrow-body { min-width: 0; }
+
+.mf-rankrow-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
+.mf-rankrow--on .mf-rankrow-name { color: var(--rk); }
+
+.mf-rankrow-blurb {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(234, 230, 255, 0.5);
+}
+
+.mf-rankrow-next {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--rk);
+}
+
+.mf-rankrow-at {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: rgba(234, 230, 255, 0.3);
+}
+
 /* Rating trend */
 .mf-spark {
   border-radius: 13px;
