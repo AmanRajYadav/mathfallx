@@ -229,7 +229,10 @@ export class Renderer {
       '25 + 37', '11 × 11', '72 ÷ 9', '19 + 46', '8 × 7', '100 − 64',
     ];
     this.attract = [];
-    const count = this.quality === 'low' ? 8 : 14;
+    // Alphas are deliberately high. This layer is viewed through the menu
+    // overlay, which is translucent-dark and blurred, so roughly half of what
+    // is drawn here survives to the screen.
+    const count = this.quality === 'low' ? 10 : 18;
     for (let i = 0; i < count; i++) {
       this.attract.push({
         x: Math.random() * this.w,
@@ -237,17 +240,17 @@ export class Renderer {
         vx: (Math.random() - 0.5) * 10,
         vy: 12 + Math.random() * 26,
         text: samples[Math.floor(Math.random() * samples.length)],
-        size: 13 + Math.random() * 16,
+        size: 16 + Math.random() * 22,
         hue: [186, 96, 320, 265][Math.floor(Math.random() * 4)],
-        a: 0.10 + Math.random() * 0.22,
+        a: 0.30 + Math.random() * 0.38,
       });
     }
-    this.attractShips = [0, 1].map((i) => ({
+    this.attractShips = [0, 1, 2].map((i) => ({
       x: Math.random() * this.w,
-      y: this.h * (0.25 + i * 0.4),
+      y: this.h * (0.2 + i * 0.3),
       vx: (i % 2 ? 1 : -1) * (16 + Math.random() * 18),
-      a: 0.3,
-      s: 0.6 + Math.random() * 0.4,
+      a: 0.8,
+      s: 0.85 + Math.random() * 0.5,
     }));
   }
 

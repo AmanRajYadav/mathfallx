@@ -410,10 +410,24 @@
 
 .mf-title--anim > span {
   display: inline-block;
+
+  /* Each letter carries its own copy of the title gradient. The parent's
+     `background-clip: text` cannot clip through transformed inline-block
+     children, so the letters would come out invisible. The gradient is purely
+     vertical and every letter box is the same height, so per-letter and
+     whole-title painting look identical. */
+  background: linear-gradient(180deg, #fff 0%, #ffe66d 38%, #ff2d95 72%, #c17bff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+
+  /* Both keyframes animate `transform`, and the last one listed wins for the
+     whole time it is running — so the float has to start *after* the drop has
+     finished, not at t=0, or the drop never renders. */
   animation:
     mf-drop 620ms cubic-bezier(0.2, 1.5, 0.35, 1) backwards,
     mf-float 4.5s ease-in-out infinite;
-  animation-delay: inherit, calc(var(--i, 0) * 0ms);
+  animation-delay: var(--d, 0ms), calc(var(--d, 0ms) + 620ms);
 }
 
 @keyframes mf-drop {
@@ -750,10 +764,13 @@
   z-index: 20;
   display: flex;
   flex-direction: column;
-  /* Lighter than it was: the attract backdrop is drawn on the canvas
-     underneath, and a near-opaque overlay hid it completely. */
-  background: rgba(4, 1, 12, 0.74);
-  backdrop-filter: blur(9px);
+  /* The attract backdrop is drawn on the canvas underneath. Every point of
+     opacity here is a point of that animation the player never sees, so this
+     is kept as light as the panel text can stand — the panels themselves
+     carry their own backgrounds, so only the tagline and section labels are
+     reading directly against it. */
+  background: rgba(4, 1, 12, 0.56);
+  backdrop-filter: blur(5px);
   padding: calc(env(safe-area-inset-top, 0px) + 16px) calc(env(safe-area-inset-right, 0px) + 16px)
            calc(env(safe-area-inset-bottom, 0px) + 16px) calc(env(safe-area-inset-left, 0px) + 16px);
   overflow-y: auto;

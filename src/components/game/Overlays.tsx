@@ -153,7 +153,7 @@ export const TitleScreen: React.FC<TitleProps> = ({ profile, voiceSupported, dai
         <div>
           <h1 className="mf-title mf-title--anim" aria-label="MathFall">
             {'MATHFALL'.split('').map((ch, i) => (
-              <span key={i} style={{ animationDelay: `${i * 70}ms` }}>{ch}</span>
+              <span key={i} style={{ '--d': `${i * 70}ms` } as React.CSSProperties}>{ch}</span>
             ))}
           </h1>
           <p className="mf-tagline">Say the answer · Destroy the block</p>
