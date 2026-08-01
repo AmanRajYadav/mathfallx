@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   ArrowLeft, CalendarDays, ChartNoAxesColumn, Gauge, Infinity as InfinityIcon,
-  Lock, Mic, Play, RotateCcw, Settings, Sparkles, Sprout, Timer, Trophy,
+  Lock, Medal, Mic, Play, RotateCcw, Settings, Sparkles, Sprout, Timer, Trophy,
 } from 'lucide-react';
 import type { RunSummary } from '../../engine/GameCore';
 import { RANKS, rankFor } from '../../engine/adaptive';
@@ -12,7 +12,7 @@ import { hapticsSupported, vibrate } from '../../audio/sound';
 import { fetchTop, playerId, type LeaderboardResult } from '../../net/leaderboard';
 
 export type Screen =
-  | 'title' | 'playing' | 'paused' | 'over' | 'settings' | 'stats' | 'board' | 'ranks';
+  | 'title' | 'playing' | 'paused' | 'over' | 'settings' | 'stats' | 'board' | 'achievements';
 
 const SKILL_LABELS: Record<string, string> = {
   add: 'Addition',
@@ -144,14 +144,18 @@ interface TitleProps {
 }
 
 export const TitleScreen: React.FC<TitleProps> = ({ profile, voiceSupported, dailyDone, onStart, onScreen }) => {
-  const rank = rankFor(profile.theta);
+  const rank = rankFor(profile.xp);
   const streak = dailyStreak(profile);
   const bestScore = Math.max(...Object.values(profile.modes).map((m) => m.bestScore), 0);
   return (
     <div className="mf-overlay">
       <div className="mf-overlay-inner">
         <div>
-          <h1 className="mf-title">MATHFALL</h1>
+          <h1 className="mf-title mf-title--anim" aria-label="MathFall">
+            {'MATHFALL'.split('').map((ch, i) => (
+              <span key={i} style={{ animationDelay: `${i * 70}ms` }}>{ch}</span>
+            ))}
+          </h1>
           <p className="mf-tagline">Say the answer · Destroy the block</p>
         </div>
 
@@ -166,12 +170,12 @@ export const TitleScreen: React.FC<TitleProps> = ({ profile, voiceSupported, dai
         <div className="mf-hero">
           <div className="mf-stat-k">Best score</div>
           <div className="mf-hero-score">{bestScore.toLocaleString()}</div>
-          <button className="mf-hero-rank" onClick={() => onScreen('ranks')}>
+          <button className="mf-hero-rank" onClick={() => onScreen('achievements')}>
             <span className="mf-hero-tier" style={{ color: rank.color }}>
               {rank.name}
             </span>
             <span className="mf-hero-sub">
-              rank {rank.tier} of {RANKS.length} · rating {Math.round(profile.theta)}
+              rank {rank.tier} of {RANKS.length} · {Math.round(profile.xp).toLocaleString()} XP
             </span>
             <span className="mf-meter" style={{ height: 4, marginTop: 6 }}>
               <i style={{ width: `${Math.round(rank.progress * 100)}%`, background: rank.color }} />
@@ -228,6 +232,10 @@ export const TitleScreen: React.FC<TitleProps> = ({ profile, voiceSupported, dai
           <Trophy size={17} /> Global leaderboard
         </button>
 
+        <button className="mf-btn mf-btn--ghost" onClick={() => onScreen('achievements')}>
+          <Medal size={17} /> Achievements · {rank.tier}/{RANKS.length}
+        </button>
+
         <div className="mf-grid2">
           <button className="mf-btn mf-btn--ghost" onClick={() => onScreen('stats')}>
             <ChartNoAxesColumn size={17} /> Stats
@@ -237,17 +245,6 @@ export const TitleScreen: React.FC<TitleProps> = ({ profile, voiceSupported, dai
           </button>
         </div>
 
-        {voiceSupported ? (
-          <p className="mf-note">
-            <strong>Voice is on.</strong> Just say the answer — &ldquo;forty two&rdquo;, &ldquo;42&rdquo;, even
-            &ldquo;four two&rdquo;. Numbers only — power-ups are tapped beside your ship.
-          </p>
-        ) : (
-          <p className="mf-note">
-            This browser has no speech recognition. The keypad works everywhere — for voice, try Chrome
-            on Android or Safari on iOS.
-          </p>
-        )}
 
         <FluenceBadge />
       </div>
@@ -299,8 +296,8 @@ export const GameOverScreen: React.FC<{
   summary, profile, name, submitState, submitError, placement,
   onName, onSubmit, onViewBoard, onAgain, onMenu,
 }) => {
-  const delta = summary.ratingAfter - summary.ratingBefore;
-  const rank = rankFor(profile.theta);
+  const delta = summary.xpGained;
+  const rank = rankFor(profile.xp);
 
   return (
     <div className="mf-overlay">
@@ -393,16 +390,16 @@ export const GameOverScreen: React.FC<{
 
         <div className="mf-rank">
           <div>
-            <div className="mf-stat-k">Neural rating</div>
+            <div className="mf-stat-k">XP earned</div>
             <div className="mf-rank-name" style={{ color: rank.color }}>{rank.name}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div className="mf-stat-v">{summary.ratingAfter}</div>
+            <div className="mf-stat-v">{summary.xpAfter.toLocaleString()}</div>
             <div
               className="mf-stat-k"
               style={{ color: delta >= 0 ? '#39ff88' : '#ff5a78' }}
             >
-              {delta >= 0 ? '+' : ''}{delta}
+              +{delta.toLocaleString()} XP
             </div>
           </div>
         </div>
@@ -662,9 +659,9 @@ export const SettingsScreen: React.FC<SettingsProps> = ({
  * twenty at once turns the rating into a map: here is what you have passed,
  * here is exactly what the next one asks for, here is how far off it is.
  */
-export const RanksScreen: React.FC<{ profile: Profile; onBack: () => void }> = ({ profile, onBack }) => {
-  const current = rankFor(profile.theta);
-  const theta = Math.round(profile.theta);
+export const AchievementsScreen: React.FC<{ profile: Profile; onBack: () => void }> = ({ profile, onBack }) => {
+  const current = rankFor(profile.xp);
+  const xp = Math.round(profile.xp);
   const currentRef = React.useRef<HTMLDivElement>(null);
 
   // Open on the player's own rank rather than at the top of a 20-row list.
@@ -675,12 +672,12 @@ export const RanksScreen: React.FC<{ profile: Profile; onBack: () => void }> = (
   return (
     <div className="mf-overlay">
       <div className="mf-overlay-inner">
-        <h2 className="mf-title" style={{ fontSize: 34 }}>RANKS</h2>
-        <p className="mf-tagline">{current.name} · {theta}</p>
+        <h2 className="mf-title" style={{ fontSize: 34 }}>ACHIEVEMENTS</h2>
+        <p className="mf-tagline">{current.name} · {xp.toLocaleString()} XP</p>
 
         <div className="mf-ranks">
           {RANKS.map((r) => {
-            const unlocked = theta >= r.at;
+            const unlocked = xp >= r.at;
             const isCurrent = r.tier === current.tier;
             return (
               <div
@@ -699,20 +696,20 @@ export const RanksScreen: React.FC<{ profile: Profile; onBack: () => void }> = (
                   <span className="mf-rankrow-blurb">{r.blurb}</span>
                   {isCurrent && current.next !== null && (
                     <span className="mf-rankrow-next">
-                      {current.next - theta} rating to {RANKS[r.tier].name}
+                      {(current.next - xp).toLocaleString()} XP to {RANKS[r.tier].name}
                     </span>
                   )}
                 </span>
-                <span className="mf-rankrow-at">{r.at || '—'}</span>
+                <span className="mf-rankrow-at">{r.at ? r.at.toLocaleString() : '—'}</span>
               </div>
             );
           })}
         </div>
 
         <p className="mf-note">
-          Rating measures <strong>fluency</strong>, not score — how hard the problems are and how
-          fast you answer them. It rises whether you win or lose the run, so a rank once reached
-          is never taken far away.
+          XP is earned on every correct answer, weighted by how hard the problem was and how fast you
+          answered. It only ever goes up — a bad run still banks everything you earned in it, so a
+          rank once reached is yours.
         </p>
 
         <button className="mf-btn mf-btn--primary" onClick={onBack}>
@@ -801,7 +798,7 @@ export const LeaderboardScreen: React.FC<{
 // -------------------------------------------------------------------- stats
 
 export const StatsScreen: React.FC<{ profile: Profile; onBack: () => void }> = ({ profile, onBack }) => {
-  const rank = rankFor(profile.theta);
+  const rank = rankFor(profile.xp);
   const acc = profile.answers > 0 ? profile.correct / profile.answers : 0;
   const dailyKeys = Object.keys(profile.daily).sort().reverse().slice(0, 7);
   const streak = dailyStreak(profile);
@@ -817,8 +814,8 @@ export const StatsScreen: React.FC<{ profile: Profile; onBack: () => void }> = (
             <div className="mf-rank-name" style={{ color: rank.color }}>{rank.name}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div className="mf-stat-v">{Math.round(profile.theta)}</div>
-            <div className="mf-stat-k">peak {Math.round(profile.peakTheta)}</div>
+            <div className="mf-stat-v">{Math.round(profile.xp).toLocaleString()}</div>
+            <div className="mf-stat-k">XP · rating {Math.round(profile.theta)}</div>
           </div>
         </div>
 

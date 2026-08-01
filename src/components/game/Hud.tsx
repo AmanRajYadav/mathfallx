@@ -46,7 +46,7 @@ const Hud: React.FC<Props> = ({ hud, hudRef, onActivate }) => {
 
       <div className="mf-hud-row">
         <span className="mf-chip" style={{ borderColor: `${hud.rankColor}66`, color: hud.rankColor }}>
-          {hud.rank} · {hud.rating}
+          {hud.rank} · {hud.xp.toLocaleString()} XP
         </span>
 
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

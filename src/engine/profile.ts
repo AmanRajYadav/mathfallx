@@ -63,6 +63,16 @@ export interface Profile {
   v: 2;
   /** Display name on the global leaderboard. Empty until the player sets one. */
   name: string;
+  /**
+   * Lifetime XP. Only ever increases.
+   *
+   * Deliberately separate from `theta`. The rating is a *measure* — it rises
+   * and falls with how you are playing right now, which makes it useless as a
+   * progress bar: a bad session visibly demotes you. XP is a *record* of work
+   * done, so a rank once earned is kept. They answer different questions:
+   * theta decides what problems to serve, xp decides what you have unlocked.
+   */
+  xp: number;
   theta: number;
   peakTheta: number;
   answers: number;
@@ -83,7 +93,11 @@ export interface Profile {
 
 export function defaultSettings(): Settings {
   return {
-    voiceEnabled: true,
+    // Off by default. Voice needs a microphone permission prompt on first run,
+    // and asking for one before the player has seen the game is the fastest
+    // way to get it refused — after which it can only be undone in browser
+    // settings. The mic button is right there when they want it.
+    voiceEnabled: false,
     voiceLang: 'en-US',
     showKeypad: true,
     sfx: 0.7,
@@ -105,6 +119,7 @@ export function defaultProfile(): Profile {
   return {
     v: 2,
     name: '',
+    xp: 0,
     theta: START_RATING,
     peakTheta: START_RATING,
     answers: 0,
@@ -148,6 +163,7 @@ function reconcile(raw: Partial<Profile> | null): Profile {
   };
 
   if (!Number.isFinite(p.theta)) p.theta = START_RATING;
+  if (!Number.isFinite(p.xp) || p.xp < 0) p.xp = 0;
   if (!Number.isFinite(p.peakTheta)) p.peakTheta = p.theta;
   for (const m of Object.keys(p.modes) as GameMode[]) {
     p.modes[m] = { ...emptyModeRecord(), ...p.modes[m] };

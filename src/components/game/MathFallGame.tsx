@@ -15,7 +15,7 @@ import {
 import Hud from './Hud';
 import Controls, { type VoiceUiState } from './Controls';
 import {
-  GameOverScreen, LeaderboardScreen, PauseScreen, RanksScreen, SettingsScreen,
+  GameOverScreen, LeaderboardScreen, PauseScreen, AchievementsScreen, SettingsScreen,
   StatsScreen, TitleScreen, type Screen, type SubmitState,
 } from './Overlays';
 import { fetchRank, submitScore } from '../../net/leaderboard';
@@ -23,8 +23,8 @@ import '../../styles/game.css';
 
 const EMPTY_HUD: HudState = {
   score: 0, combo: 0, multiplier: 1, shield: 3, maxShield: 3, wave: 1,
-  overdrive: 0, overdriveActive: false, rating: 1000, ratingDelta: 0,
-  rank: 'INITIATE', rankColor: '#8b93b0', mode: 'arcade', timeLeft: null,
+  overdrive: 0, overdriveActive: false, xp: 0, xpGained: 0,
+  rank: 'SPARK', rankColor: '#8b93b0', mode: 'arcade', timeLeft: null,
   solved: 0, total: null, accuracy: 1, status: 'idle', lastRt: null,
   inventory: [], activeEffects: [],
 };
@@ -175,6 +175,11 @@ const MathFallGame: React.FC = () => {
           if (haptics && (e.tier === 'amazing' || e.tier === 'legendary')) vibrate([14, 30, 14]);
           break;
         }
+        case 'rankUp':
+          playSfx('record');
+          if (haptics) vibrate([30, 30, 30, 30, 70]);
+          bumpProfile();
+          break;
         case 'record':
           playSfx('record');
           if (haptics) vibrate([40, 40, 40, 40, 90]);
@@ -231,8 +236,13 @@ const MathFallGame: React.FC = () => {
     const loop = (now: number) => {
       rafRef.current = requestAnimationFrame(loop);
       try {
-        game.tick(now);
-        renderer.render(game, now);
+        if (game.status === 'playing' || game.status === 'paused') {
+          game.tick(now);
+          renderer.render(game, now);
+        } else {
+          // Menus get a live backdrop rather than a frozen last frame.
+          renderer.renderAttract(now);
+        }
       } catch (err) {
         loopErrors += 1;
         if (loopErrors <= 3) {
@@ -654,7 +664,7 @@ const MathFallGame: React.FC = () => {
       solved: s.solved,
       accuracy: s.accuracy,
       bestCombo: s.bestCombo,
-      rating: s.ratingAfter,
+      rating: Math.round(profileRef.current.theta),
       voiceShare: s.voiceShare,
       durationMs: s.durationMs,
     }).then((res) => {
@@ -811,8 +821,8 @@ const MathFallGame: React.FC = () => {
         />
       )}
 
-      {screen === 'ranks' && (
-        <RanksScreen profile={profile} onBack={() => setScreenBoth('title')} />
+      {screen === 'achievements' && (
+        <AchievementsScreen profile={profile} onBack={() => setScreenBoth('title')} />
       )}
 
       {screen === 'stats' && (

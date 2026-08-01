@@ -394,6 +394,42 @@
   color: rgba(234, 230, 255, 0.3);
 }
 
+/*
+ * Title.
+ *
+ * Letters drop in and then breathe, so the first screen is doing something
+ * before the player touches anything. Purely CSS — no JS timer, and it
+ * animates the compositor-friendly properties only, so it costs nothing on a
+ * phone that is also running the attract backdrop on canvas.
+ */
+.mf-title--anim {
+  display: flex;
+  justify-content: center;
+  gap: 0.01em;
+}
+
+.mf-title--anim > span {
+  display: inline-block;
+  animation:
+    mf-drop 620ms cubic-bezier(0.2, 1.5, 0.35, 1) backwards,
+    mf-float 4.5s ease-in-out infinite;
+  animation-delay: inherit, calc(var(--i, 0) * 0ms);
+}
+
+@keyframes mf-drop {
+  from { transform: translateY(-70%) scale(0.7); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes mf-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-5px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mf-title--anim > span { animation: none; }
+}
+
 /* Title hero: score leads, rank follows */
 .mf-hero {
   border-radius: 15px;
@@ -714,8 +750,10 @@
   z-index: 20;
   display: flex;
   flex-direction: column;
-  background: rgba(4, 1, 12, 0.9);
-  backdrop-filter: blur(14px);
+  /* Lighter than it was: the attract backdrop is drawn on the canvas
+     underneath, and a near-opaque overlay hid it completely. */
+  background: rgba(4, 1, 12, 0.74);
+  backdrop-filter: blur(9px);
   padding: calc(env(safe-area-inset-top, 0px) + 16px) calc(env(safe-area-inset-right, 0px) + 16px)
            calc(env(safe-area-inset-bottom, 0px) + 16px) calc(env(safe-area-inset-left, 0px) + 16px);
   overflow-y: auto;

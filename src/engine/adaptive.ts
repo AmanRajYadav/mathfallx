@@ -201,12 +201,22 @@ export interface Rank {
   /** 1-based position on the ladder. */
   tier: number;
   name: string;
-  /** Rating at which this rank is reached. */
+  /** Lifetime XP at which this rank unlocks. */
   at: number;
   color: string;
-  /** What arithmetic a player at this level is actually handling. */
+  /** What arithmetic a player at this level is typically handling. */
   blurb: string;
 }
+
+/**
+ * XP between consecutive ranks.
+ *
+ * An arithmetic ladder: rank n unlocks at (n - 1) x 1000, so the twentieth
+ * sits at 19,000. Flat rather than accelerating on purpose — an exponential
+ * curve makes the last few ranks unreachable in a school term, and a rank
+ * nobody will ever see is decoration rather than a goal.
+ */
+export const XP_PER_RANK = 1000;
 
 /**
  * The rank ladder: twenty tiers from a first correct answer to mastery.
@@ -222,43 +232,66 @@ export interface Rank {
  * knowing.
  */
 export const RANKS: Rank[] = [
-  { tier: 1,  name: 'SPARK',        at: 0,    color: '#8b93b0', blurb: 'First signal. Everyone starts here.' },
-  { tier: 2,  name: 'EMBER',        at: 700,  color: '#ff9f6e', blurb: 'Single-digit sums, taken steadily.' },
-  { tier: 3,  name: 'CIRCUIT',      at: 785,  color: '#ffb03a', blurb: 'Small sums answered without counting.' },
-  { tier: 4,  name: 'RELAY',        at: 870,  color: '#ffd34d', blurb: 'Adding with carries. Small times tables.' },
-  { tier: 5,  name: 'VECTOR',       at: 955,  color: '#d8f04a', blurb: 'Two-digit addition, comfortably.' },
-  { tier: 6,  name: 'LATTICE',      at: 1040, color: '#7fe86b', blurb: 'Subtraction with borrows. Squares.' },
-  { tier: 7,  name: 'PRISM',        at: 1130, color: '#39ff88', blurb: 'Times tables to 12, recalled not derived.' },
-  { tier: 8,  name: 'CASCADE',      at: 1220, color: '#2ce8b4', blurb: 'Division facts. Roots of perfect squares.' },
-  { tier: 9,  name: 'NEON',         at: 1310, color: '#00f0ff', blurb: 'Three-term sums held in your head.' },
-  { tier: 10, name: 'PULSAR',       at: 1400, color: '#4cc4ff', blurb: 'Two-digit by one-digit multiplication.' },
-  { tier: 11, name: 'CIPHER',       at: 1495, color: '#6ea8ff', blurb: 'Longer division, cleanly.' },
-  { tier: 12, name: 'NEBULA',       at: 1590, color: '#8f8cff', blurb: 'Mixed operations in the right order.' },
-  { tier: 13, name: 'QUANTUM',      at: 1685, color: '#a97bff', blurb: 'Multi-step arithmetic at speed.' },
-  { tier: 14, name: 'ZENITH',       at: 1785, color: '#c17bff', blurb: 'Bracketed expressions, no hesitation.' },
-  { tier: 15, name: 'ECLIPSE',      at: 1885, color: '#dd6fe8', blurb: 'Squares past the teens.' },
-  { tier: 16, name: 'NOVA',         at: 1990, color: '#ff5ec4', blurb: 'Two-digit by two-digit multiplication.' },
-  { tier: 17, name: 'HORIZON',      at: 2095, color: '#ff2d95', blurb: 'Hard problems answered on reflex.' },
-  { tier: 18, name: 'SINGULARITY',  at: 2205, color: '#ff6b6b', blurb: 'Faster than most people can read.' },
-  { tier: 19, name: 'ASCENDANT',    at: 2320, color: '#ffd34d', blurb: 'The generator is running out of ideas.' },
-  { tier: 20, name: 'TRANSCENDENT', at: 2440, color: '#ffffff', blurb: 'Nothing left to prove.' },
+  { tier: 1,  name: 'SPARK',        at: 0,  color: '#8b93b0', blurb: 'Where everyone begins.' },
+  { tier: 2,  name: 'EMBER',        at: 1000,  color: '#ff9f6e', blurb: 'You came back for a second run.' },
+  { tier: 3,  name: 'CIRCUIT',      at: 2000,  color: '#ffb03a', blurb: 'The basics are no longer a struggle.' },
+  { tier: 4,  name: 'RELAY',        at: 3000,  color: '#ffd34d', blurb: 'Answers arriving without counting.' },
+  { tier: 5,  name: 'VECTOR',       at: 4000,  color: '#d8f04a', blurb: 'A few hundred problems behind you.' },
+  { tier: 6,  name: 'LATTICE',      at: 5000,  color: '#7fe86b', blurb: 'Long chains are becoming normal.' },
+  { tier: 7,  name: 'PRISM',        at: 6000,  color: '#39ff88', blurb: 'Times tables recalled, not worked out.' },
+  { tier: 8,  name: 'CASCADE',      at: 7000,  color: '#2ce8b4', blurb: 'Comfortable at speed.' },
+  { tier: 9,  name: 'NEON',         at: 8000,  color: '#00f0ff', blurb: 'Thousands of problems solved.' },
+  { tier: 10, name: 'PULSAR',       at: 9000, color: '#4cc4ff', blurb: 'Most people stop before here.' },
+  { tier: 11, name: 'CIPHER',       at: 10000, color: '#6ea8ff', blurb: 'Serious mileage.' },
+  { tier: 12, name: 'NEBULA',       at: 11000, color: '#8f8cff', blurb: 'The hard templates no longer surprise you.' },
+  { tier: 13, name: 'QUANTUM',      at: 12000, color: '#a97bff', blurb: 'Faster than the blocks can fall.' },
+  { tier: 14, name: 'ZENITH',       at: 13000, color: '#c17bff', blurb: 'Very few reach this.' },
+  { tier: 15, name: 'ECLIPSE',      at: 14000, color: '#dd6fe8', blurb: 'Dedication, measured in answers.' },
+  { tier: 16, name: 'NOVA',         at: 15000, color: '#ff5ec4', blurb: 'The leaderboard is your neighbourhood.' },
+  { tier: 17, name: 'HORIZON',      at: 16000, color: '#ff2d95', blurb: 'Reflex, not arithmetic.' },
+  { tier: 18, name: 'SINGULARITY',  at: 17000, color: '#ff6b6b', blurb: 'Genuinely rare.' },
+  { tier: 19, name: 'ASCENDANT',    at: 18000, color: '#ffd34d', blurb: 'The generator is running out of ideas.' },
+  { tier: 20, name: 'TRANSCENDENT', at: 19000, color: '#ffffff', blurb: 'Nothing left to prove.' },
 ];
 
 export interface RankState extends Rank {
-  /** Rating needed for the next rank, or null at the top. */
+  /** XP needed for the next rank, or null at the top. */
   next: number | null;
   /** 0-1 progress toward the next rank. */
   progress: number;
+  /** XP still required for the next rank, or 0 at the top. */
+  remaining: number;
 }
 
-/** The rank a rating currently sits in, with progress toward the next. */
-export function rankFor(theta: number): RankState {
+/** The rank a given lifetime XP total sits in, with progress toward the next. */
+export function rankFor(xp: number): RankState {
+  const total = Math.max(0, xp);
   let idx = 0;
-  for (let i = 0; i < RANKS.length; i++) if (theta >= RANKS[i].at) idx = i;
+  for (let i = 0; i < RANKS.length; i++) if (total >= RANKS[i].at) idx = i;
   const current = RANKS[idx];
   const next = idx + 1 < RANKS.length ? RANKS[idx + 1] : null;
   const progress = next
-    ? Math.max(0, Math.min(1, (theta - current.at) / (next.at - current.at)))
+    ? Math.max(0, Math.min(1, (total - current.at) / (next.at - current.at)))
     : 1;
-  return { ...current, next: next ? next.at : null, progress };
+  return {
+    ...current,
+    next: next ? next.at : null,
+    progress,
+    remaining: next ? Math.max(0, next.at - total) : 0,
+  };
+}
+
+/**
+ * XP earned for one correct answer.
+ *
+ * Weighted by difficulty and speed, so grinding trivial problems is a poor
+ * route up the ladder — the same principle the rating uses, applied to
+ * progression. Roughly 3 XP for an easy answer and 14 for a hard one taken
+ * instantly, which puts the top rank at tens of thousands of answers rather
+ * than an afternoon.
+ */
+export function xpForAnswer(itemRating: number, srt: number): number {
+  const difficulty = 1 + Math.max(0, itemRating - 700) / 420;
+  const speed = 1 + Math.max(0, srt) * 0.9;
+  return Math.max(1, Math.round(2.4 * difficulty * speed));
 }

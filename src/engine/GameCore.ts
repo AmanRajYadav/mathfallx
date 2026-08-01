@@ -20,6 +20,7 @@ import {
   srtScore,
   targetDifficulty,
   weakestSkill,
+  xpForAnswer,
   type AdaptiveState,
 } from './adaptive';
 import { generateDailySet, generateItem, type Item, type Skill } from './generator';
@@ -147,8 +148,8 @@ export interface HudState {
   wave: number;
   overdrive: number;
   overdriveActive: boolean;
-  rating: number;
-  ratingDelta: number;
+  xp: number;
+  xpGained: number;
   rank: string;
   rankColor: string;
   mode: GameMode;
@@ -175,6 +176,7 @@ export type GameEvent =
   | { type: 'overdrive' }
   | { type: 'praise'; tier: PraiseTier }
   | { type: 'record'; score: number; previous: number }
+  | { type: 'rankUp'; rank: string; tier: number }
   | { type: 'shard' }
   | { type: 'shardKill' }
   | { type: 'shipHit' }
@@ -195,8 +197,9 @@ export interface RunSummary {
   accuracy: number;
   avgRtMs: number;
   fastestRtMs: number | null;
-  ratingBefore: number;
-  ratingAfter: number;
+  xpBefore: number;
+  xpAfter: number;
+  xpGained: number;
   voiceShare: number;
   durationMs: number;
   isRecord: boolean;
@@ -519,6 +522,10 @@ export class GameCore {
   avgFrameMs = 0;
   /** One record banner per run, however far past the old best you go. */
   private recordAnnounced = false;
+  /** XP earned in the current run, for the summary. */
+  private runXp = 0;
+  /** Rank tier at the moment of the last promotion, so each fires once. */
+  private rankAtStart = 1;
 
   // --------------------------------------------------------------- power-ups
 
@@ -655,6 +662,8 @@ export class GameCore {
     this.timeScale = 1;
     this.pressure = 1;
     this.recordAnnounced = false;
+    this.runXp = 0;
+    this.rankAtStart = rankFor(this.profile.xp).tier;
 
     this.solved = 0;
     this.missed = 0;
@@ -756,8 +765,9 @@ export class GameCore {
       accuracy: this.solved + this.missed > 0 ? this.solved / (this.solved + this.missed) : 0,
       avgRtMs: this.rtCount > 0 ? this.rtSum / this.rtCount : 0,
       fastestRtMs: this.fastestRt,
-      ratingBefore: Math.round(this.ratingBefore),
-      ratingAfter: Math.round(this.profile.theta),
+      xpBefore: Math.round(this.profile.xp - this.runXp),
+      xpAfter: Math.round(this.profile.xp),
+      xpGained: Math.round(this.runXp),
       voiceShare: this.solved > 0 ? this.voiceHits / this.solved : 0,
       durationMs,
       isRecord,
@@ -897,6 +907,22 @@ export class GameCore {
     saveProfile(this.profile);
 
     if (correct) {
+      // XP is banked per answer, not per run, so a run that ends badly still
+      // keeps everything earned inside it. Nothing about progression should
+      // depend on surviving.
+      const gainedXp = xpForAnswer(block.rating, srt);
+      this.profile.xp += gainedXp;
+      this.runXp += gainedXp;
+
+      const after = rankFor(this.profile.xp);
+      if (after.tier > this.rankAtStart) {
+        this.rankAtStart = after.tier;
+        this.addPopup(this.width / 2, this.playBottom - 250, after.name, 45, true);
+        this.burst(this.width / 2, this.playBottom - 250, Math.round(50 * this.effectBudget), 45, 1.5);
+        this.ring(this.width / 2, this.playBottom - 250, 240, 45, 5);
+        this.emit({ type: 'rankUp', rank: after.name, tier: after.tier });
+      }
+
       this.solved += 1;
       this.combo += 1;
       if (this.combo > this.bestCombo) this.bestCombo = this.combo;
@@ -1678,7 +1704,7 @@ export class GameCore {
   private pushHud(): void {
     this.hudDirty = false;
     if (!this.opts.onHud) return;
-    const rank = rankFor(this.profile.theta);
+    const rank = rankFor(this.profile.xp);
     this.opts.onHud({
       score: this.score,
       combo: this.combo,
@@ -1688,8 +1714,8 @@ export class GameCore {
       wave: this.wave,
       overdrive: this.overdrive,
       overdriveActive: this.overdriveActive(),
-      rating: Math.round(this.profile.theta),
-      ratingDelta: Math.round(this.lastRatingDelta),
+      xp: Math.round(this.profile.xp),
+      xpGained: Math.round(this.runXp),
       rank: rank.name,
       rankColor: rank.color,
       mode: this.config.mode,

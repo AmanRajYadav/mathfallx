@@ -105,6 +105,7 @@ export class Renderer {
     this.bgCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     this.buildStars();
+    this.attract = [];
     this.paintBackdrop();
   }
 
@@ -210,6 +211,109 @@ export class Renderer {
   }
 
   // --------------------------------------------------------------------- draw
+
+  /**
+   * Attract mode: what plays behind the menus.
+   *
+   * A completely still backdrop makes the first screen feel like a document
+   * rather than a game. Drifting equations and a couple of ships crossing the
+   * frame cost almost nothing and show what the game *is* before anyone has
+   * pressed anything.
+   */
+  private attract: Array<{ x: number; y: number; vx: number; vy: number; text: string; size: number; hue: number; a: number }> = [];
+  private attractShips: Array<{ x: number; y: number; vx: number; a: number; s: number }> = [];
+
+  private seedAttract(): void {
+    const samples = [
+      '7 × 8', '12 + 9', '45 − 18', '6²', '√81', '96 ÷ 8', '3 × 14',
+      '25 + 37', '11 × 11', '72 ÷ 9', '19 + 46', '8 × 7', '100 − 64',
+    ];
+    this.attract = [];
+    const count = this.quality === 'low' ? 8 : 14;
+    for (let i = 0; i < count; i++) {
+      this.attract.push({
+        x: Math.random() * this.w,
+        y: Math.random() * this.h,
+        vx: (Math.random() - 0.5) * 10,
+        vy: 12 + Math.random() * 26,
+        text: samples[Math.floor(Math.random() * samples.length)],
+        size: 13 + Math.random() * 16,
+        hue: [186, 96, 320, 265][Math.floor(Math.random() * 4)],
+        a: 0.10 + Math.random() * 0.22,
+      });
+    }
+    this.attractShips = [0, 1].map((i) => ({
+      x: Math.random() * this.w,
+      y: this.h * (0.25 + i * 0.4),
+      vx: (i % 2 ? 1 : -1) * (16 + Math.random() * 18),
+      a: 0.3,
+      s: 0.6 + Math.random() * 0.4,
+    }));
+  }
+
+  /** Draws the menu backdrop. Call instead of `render` when not playing. */
+  renderAttract(now: number): void {
+    const dt = this.lastFrame === 0 ? 16 : Math.min(50, now - this.lastFrame);
+    this.lastFrame = now;
+    this.time += dt / 1000;
+    if (this.attract.length === 0) this.seedAttract();
+
+    const c = this.ctx;
+    c.drawImage(this.bg, 0, 0, this.w, this.h);
+    this.drawStars(dt);
+
+    const step = dt / 1000;
+    c.save();
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    for (const e of this.attract) {
+      e.x += e.vx * step;
+      e.y += e.vy * step;
+      if (e.y - 30 > this.h) { e.y = -30; e.x = Math.random() * this.w; }
+      if (e.x < -60) e.x = this.w + 60;
+      if (e.x > this.w + 60) e.x = -60;
+
+      c.font = `800 ${Math.round(e.size)}px ui-monospace, 'SF Mono', Menlo, Consolas, monospace`;
+      if (this.quality === 'high') {
+        c.shadowColor = `hsl(${e.hue},100%,60%)`;
+        c.shadowBlur = 12;
+      }
+      c.fillStyle = `hsla(${e.hue},100%,72%,${e.a})`;
+      c.fillText(e.text, e.x, e.y);
+    }
+    c.restore();
+
+    // Ships crossing, drawn small and dim so they read as background traffic.
+    c.save();
+    c.globalCompositeOperation = 'lighter';
+    for (const s of this.attractShips) {
+      s.x += s.vx * step;
+      if (s.x < -50) s.x = this.w + 50;
+      if (s.x > this.w + 50) s.x = -50;
+      const bob = Math.sin(this.time * 1.6 + s.y) * 6;
+
+      c.save();
+      c.translate(s.x, s.y + bob);
+      c.scale(s.s * (s.vx < 0 ? -1 : 1), s.s);
+      c.rotate(Math.PI / 2);
+      c.fillStyle = `rgba(0,240,255,${s.a})`;
+      c.beginPath();
+      c.moveTo(0, -16);
+      c.lineTo(9, 5);
+      c.lineTo(0, 1);
+      c.lineTo(-9, 5);
+      c.closePath();
+      c.fill();
+
+      const fg = c.createLinearGradient(0, 4, 0, 22);
+      fg.addColorStop(0, `rgba(255,45,149,${s.a})`);
+      fg.addColorStop(1, 'rgba(255,45,149,0)');
+      c.fillStyle = fg;
+      c.fillRect(-3, 4, 6, 18);
+      c.restore();
+    }
+    c.restore();
+  }
 
   render(game: GameCore, now: number): void {
     const dt = this.lastFrame === 0 ? 16 : Math.min(50, now - this.lastFrame);
