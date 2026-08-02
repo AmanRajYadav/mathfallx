@@ -106,6 +106,15 @@ export interface SubmitResult {
   ok: boolean;
   /** Present when the server rejected the row rather than the request failing. */
   reason?: string;
+  /**
+   * Whether re-sending this exact row could ever succeed.
+   *
+   * The outbox keeps retrying anything transient — a dead network, a rate
+   * limit, a schema that has not been installed yet — and drops only what is
+   * permanently rejected. Without this distinction a retry queue either gives
+   * up on recoverable failures or spins forever on unrecoverable ones.
+   */
+  retry?: boolean;
 }
 
 /**
@@ -115,24 +124,35 @@ export interface SubmitResult {
  * pace — and reporting all of those as "couldn't reach the leaderboard" is
  * both wrong and unhelpful.
  */
-function explain(status: number, body: string): string {
+function explain(status: number, body: string): { reason: string; retry: boolean } {
   const message = (() => {
     try { return String((JSON.parse(body) as { message?: string }).message ?? ''); }
     catch { return body; }
   })().toLowerCase();
 
-  if (message.includes('rate limited')) return 'Too quick — try again in a few seconds.';
-  if (message.includes('implausible')) return 'That run was rejected as implausible.';
-  if (status === 404 || message.includes('could not find the table')) {
-    return 'Leaderboard not set up yet (run supabase/schema.sql).';
+  if (message.includes('rate limited')) {
+    return { reason: 'Saving — one moment.', retry: true };
   }
-  if (status === 401 || status === 403) return 'Leaderboard rejected the request.';
-  return 'Submission failed.';
+  if (message.includes('implausible')) {
+    return { reason: 'That run was rejected as implausible.', retry: false };
+  }
+  if (status === 404 || message.includes('could not find the table')) {
+    return { reason: 'Leaderboard not set up yet (run supabase/schema.sql).', retry: true };
+  }
+  if (status === 401 || status === 403) {
+    return { reason: 'Leaderboard rejected the request.', retry: true };
+  }
+  // A 400 is a constraint violation: the row itself is malformed and will be
+  // just as malformed the tenth time.
+  if (status === 400 || status === 409 || status === 422) {
+    return { reason: 'Submission rejected.', retry: false };
+  }
+  return { reason: 'Submission failed.', retry: true };
 }
 
 export async function submitScore(p: SubmitPayload): Promise<SubmitResult> {
   const name = sanitizeName(p.name);
-  if (!name || p.score <= 0) return { ok: false, reason: 'Nothing to submit.' };
+  if (!name || p.score <= 0) return { ok: false, reason: 'Nothing to submit.', retry: false };
 
   const row: ScoreRow = {
     name,
@@ -156,9 +176,9 @@ export async function submitScore(p: SubmitPayload): Promise<SubmitResult> {
     });
     if (res.ok) return { ok: true };
     const body = await res.text().catch(() => '');
-    return { ok: false, reason: explain(res.status, body) };
+    return { ok: false, ...explain(res.status, body) };
   } catch {
-    return { ok: false, reason: 'No connection. Your score is saved locally.' };
+    return { ok: false, reason: 'No connection — saved, will send later.', retry: true };
   }
 }
 

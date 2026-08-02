@@ -720,11 +720,17 @@ export class Renderer {
     c.globalCompositeOperation = 'lighter';
     for (const s of game.shockwaves) {
       if (!s.alive) continue;
+      // `arc` throws on a negative or non-finite radius, and a throw here
+      // freezes the whole canvas for the rest of the run. Nothing upstream is
+      // allowed to produce one any more; this is the second lock on the door,
+      // because a frozen screen is far worse than a missing ring.
+      const r = s.r > 0 && Number.isFinite(s.r) ? s.r : 0;
+      if (r === 0) continue;
       const a = Math.max(0, s.life);
       c.strokeStyle = `hsla(${s.hue},100%,72%,${a * 0.85})`;
-      c.lineWidth = s.width * a;
+      c.lineWidth = Math.max(0, s.width * a);
       c.beginPath();
-      c.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      c.arc(s.x, s.y, r, 0, Math.PI * 2);
       c.stroke();
     }
     c.restore();
@@ -991,7 +997,11 @@ function roundRect(c: CanvasRenderingContext2D, x: number, y: number, w: number,
 }
 
 function clamp01(v: number): number {
-  return v < 0 ? 0 : v > 1 ? 1 : v;
+  // NaN fails both comparisons and would otherwise pass straight through, which
+  // is how a single bad coordinate reaches `arc` and kills the canvas. Every
+  // caller wants a number in range; none of them want NaN.
+  if (!(v > 0)) return 0;
+  return v > 1 ? 1 : v;
 }
 
 function easeOutBack(t: number): number {

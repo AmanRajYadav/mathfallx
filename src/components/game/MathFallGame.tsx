@@ -18,7 +18,9 @@ import {
   GameOverScreen, LeaderboardScreen, PauseScreen, AchievementsScreen, SettingsScreen,
   StatsScreen, TitleScreen, type Screen, type SubmitState,
 } from './Overlays';
-import { fetchRank, submitScore } from '../../net/leaderboard';
+import { fetchRank } from '../../net/leaderboard';
+import { enqueue as queueRun, flush as flushOutbox, has as stillQueued, startOutbox } from '../../net/outbox';
+import { clearCheckpoint, loadCheckpoint, summaryFrom } from '../../engine/checkpoint';
 import '../../styles/game.css';
 
 const EMPTY_HUD: HudState = {
@@ -36,6 +38,13 @@ const MathFallGame: React.FC = () => {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const gameRef = useRef<GameCore | null>(null);
+  /**
+   * Outbox id for the run on the game-over screen.
+   *
+   * Held so pressing Save after an auto-submit updates the queued row instead
+   * of inserting a second one for the same run.
+   */
+  const runIdRef = useRef<string | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const voiceRef = useRef<VoiceInput | null>(null);
   const rafRef = useRef<number>(0);
@@ -60,9 +69,17 @@ const MathFallGame: React.FC = () => {
     supported: false, enabled: false, state: 'idle', heard: '', lastMatch: null, lastMatchAt: 0, miss: null,
   });
 
+  const [recovered, setRecovered] = useState(false);
+
+  /** Screens where losing the page would cost the player something. */
+  const isBusyScreen = (s: Screen) => s === 'playing' || s === 'paused' || s === 'over';
+
   const setScreenBoth = useCallback((s: Screen) => {
     screenRef.current = s;
     setScreen(s);
+    // Tells the service worker registration that a deferred update can be
+    // applied now. Reloading during a run is what used to throw runs away.
+    if (!isBusyScreen(s)) window.dispatchEvent(new Event('mathfall:idle'));
   }, []);
 
   // ------------------------------------------------------------ engine setup
@@ -123,8 +140,14 @@ const MathFallGame: React.FC = () => {
         // handleKey guarantees the field only ever holds a viable prefix, so
         // this can only ever fire when the board changed underneath it — it
         // will never fight a keypress the way the earlier version did.
+        //
+        // An empty board is not a reason to clear. Between waves, and for the
+        // few frames after a kill while blocks are still dying, there is
+        // nothing live — wiping the field then deletes digits the player is
+        // part-way through typing, which is exactly the "I put the value in and
+        // it didn't take it" they reported.
         const prev = inputRef.current;
-        if (prev && !answers.some((a) => String(a).startsWith(prev))) {
+        if (prev && answers.length > 0 && !answers.some((a) => String(a).startsWith(prev))) {
           inputRef.current = '';
           setInput('');
         }
@@ -384,6 +407,8 @@ const MathFallGame: React.FC = () => {
     setSummary(null);
     setSubmitState('idle');
     setPlacement(null);
+    setRecovered(false);
+    runIdRef.current = null;
     setVoiceUi((v) => ({ ...v, heard: '', lastMatch: null, lastMatchAt: 0, miss: null }));
     setScreenBoth('playing');
     game.start(mode, skills);
@@ -461,6 +486,17 @@ const MathFallGame: React.FC = () => {
     const live = game.liveAnswers();
     const next = (inputRef.current + k).slice(0, 4);
     const value = parseInt(next, 10);
+
+    // Nothing on the board to check against — between waves, or in the frames
+    // after a kill while the last block is still dying. Rejecting here made the
+    // keypad feel broken mid-chain: the digit was refused with an error beep
+    // for no reason the player could see. Hold it and let the next spawn
+    // decide.
+    if (live.length === 0) {
+      setBoth(next);
+      playSfx('tick');
+      return;
+    }
 
     // Exact hit: fire straight away so a two-digit answer needs no submit.
     if (live.includes(value)) {
@@ -605,7 +641,11 @@ const MathFallGame: React.FC = () => {
   // player return to a dead run.
   useEffect(() => {
     const onVisibility = () => {
-      if (document.hidden && screenRef.current === 'playing') pauseGame();
+      if (!document.hidden) return;
+      if (screenRef.current === 'playing') pauseGame();
+      // On mobile this is the last event that reliably fires before the OS may
+      // discard the tab; pagehide often does not arrive at all.
+      flushProfile();
     };
     const onHide = () => flushProfile();
     document.addEventListener('visibilitychange', onVisibility);
@@ -646,6 +686,14 @@ const MathFallGame: React.FC = () => {
   const [submitError, setSubmitError] = useState('');
   const [placement, setPlacement] = useState<number | null>(null);
 
+  /**
+   * Saves the finished run.
+   *
+   * Writes to the outbox *before* touching the network, so from this point on
+   * the score cannot be lost: a failed send, a closed tab or a dead phone all
+   * leave a queued row that the next launch retries. `submitState` reports the
+   * send, not the save — the save has already happened.
+   */
   const submitRun = useCallback(() => {
     const s = summary;
     const name = boardName.trim();
@@ -655,8 +703,7 @@ const MathFallGame: React.FC = () => {
     profileRef.current.name = name;
     saveProfile(profileRef.current);
 
-    setSubmitState('sending');
-    void submitScore({
+    const id = queueRun({
       name,
       score: s.score,
       mode: s.mode,
@@ -667,17 +714,101 @@ const MathFallGame: React.FC = () => {
       rating: Math.round(profileRef.current.theta),
       voiceShare: s.voiceShare,
       durationMs: s.durationMs,
-    }).then((res) => {
-      setSubmitState(res.ok ? 'done' : 'failed');
-      setSubmitError(res.reason ?? '');
-      if (!res.ok) return;
-      setBoardMode(s.mode);
-      playSfx('record');
-      // Report the placement straight away. "You're 4th" is the answer the
-      // player actually wanted when they typed their name.
-      void fetchRank(s.mode, name).then(setPlacement).catch(() => setPlacement(null));
+    }, runIdRef.current ?? undefined);
+    runIdRef.current = id;
+
+    setSubmitState('sending');
+    void flushOutbox().then(() => {
+      // Gone from the queue means it landed — or was permanently rejected,
+      // which is reported through the error the flush recorded.
+      if (!stillQueued(id)) {
+        setSubmitState('done');
+        setSubmitError('');
+        setBoardMode(s.mode);
+        playSfx('record');
+        // Report the placement straight away. "You're 4th" is the answer the
+        // player actually wanted when they typed their name.
+        void fetchRank(s.mode, name).then(setPlacement).catch(() => setPlacement(null));
+        return;
+      }
+      // Still queued: it will go out on its own. Say so rather than
+      // presenting it as a loss — nothing has been lost.
+      setSubmitState('queued');
+      setSubmitError('');
     });
   }, [summary, boardName, hud.wave]);
+
+  /**
+   * Saves a finished run without waiting to be asked.
+   *
+   * The Save button was the single point of failure for every run: miss it —
+   * because the phone rang, the battery died, or the page reloaded under you —
+   * and hours of play were gone. A player whose name we already know does not
+   * need to confirm that they want their score kept.
+   */
+  useEffect(() => {
+    if (screen !== 'over' || !summary || submitState !== 'idle') return;
+    if (summary.score <= 0 || !boardName.trim()) return;
+    submitRun();
+  }, [screen, summary, submitState, boardName, submitRun]);
+
+  /**
+   * Upgrades "queued" to "saved" once the background drain gets it out.
+   *
+   * A queued run is often sent moments later — by the retry timer, or by a
+   * flush that was already in flight when Save was pressed. Leaving the screen
+   * saying "queued" after it has actually landed understates what happened.
+   */
+  useEffect(() => {
+    if (submitState !== 'queued' || !summary) return;
+    const id = runIdRef.current;
+    const name = boardName.trim();
+    if (!id || !name) return;
+
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      tries += 1;
+      if (!stillQueued(id)) {
+        window.clearInterval(timer);
+        setSubmitState('done');
+        setBoardMode(summary.mode);
+        void fetchRank(summary.mode, name).then(setPlacement).catch(() => setPlacement(null));
+      } else if (tries >= 12) {
+        window.clearInterval(timer);
+      }
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [submitState, summary, boardName]);
+
+  /**
+   * Publishes whether the app can be reloaded, and drains the outbox.
+   *
+   * Both are deliberately outside React's render path: the service worker
+   * registration in main.tsx runs before this component mounts and needs a
+   * plain function it can call at any time.
+   */
+  useEffect(() => {
+    const w = window as unknown as { __mathfallBusy?: () => boolean };
+    w.__mathfallBusy = () => isBusyScreen(screenRef.current);
+    startOutbox();
+    return () => { delete w.__mathfallBusy; };
+  }, []);
+
+  /**
+   * Recovers a run the app was killed in the middle of.
+   *
+   * Presented as an ordinary game-over screen, because that is what it is —
+   * the run ended, just not by the player's choice. Everything from there on
+   * (auto-save, the outbox, the leaderboard) works exactly as it would have.
+   */
+  useEffect(() => {
+    const c = loadCheckpoint();
+    if (!c) return;
+    clearCheckpoint();
+    setSummary(summaryFrom(c));
+    setRecovered(true);
+    setScreenBoth('over');
+  }, [setScreenBoth]);
 
   const testVoice = useCallback((phrase: string) => {
     const voice = voiceRef.current;
@@ -786,6 +917,7 @@ const MathFallGame: React.FC = () => {
           submitState={submitState}
           submitError={submitError}
           placement={placement}
+          recovered={recovered}
           onName={setBoardName}
           onSubmit={submitRun}
           onViewBoard={() => { setBoardMode(summary.mode); setScreenBoth('board'); }}

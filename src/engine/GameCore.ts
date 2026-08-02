@@ -23,12 +23,14 @@ import {
   xpForAnswer,
   type AdaptiveState,
 } from './adaptive';
+import { clearCheckpoint, saveCheckpoint } from './checkpoint';
 import { generateDailySet, generateItem, type Item, type Skill } from './generator';
 import { POWER_UPS, dropChance, rollPowerUp, type PowerUpType } from './powerups';
 import { praiseForCombo, praiseForSpeed, type PraiseTier } from './praise';
 import { Rng, dailySeed } from './rng';
 import {
   adaptiveStateOf,
+  flushProfile,
   loadProfile,
   pushEvent,
   saveProfile,
@@ -280,6 +282,16 @@ const MAX_SHARDS = 7;
 const MAX_INVENTORY = 3;
 const HUD_INTERVAL_MS = 90;
 
+/**
+ * How often a run is snapshotted for crash recovery.
+ *
+ * Five seconds of active play is the most anyone can lose, and at roughly
+ * 2s per answer that is a couple of problems — small enough not to matter,
+ * long enough that the synchronous localStorage write never lands often
+ * enough to be felt.
+ */
+const CHECKPOINT_INTERVAL_MS = 5000;
+
 const HUES: Record<BlockKind, number> = {
   normal: 186,   // cyan
   fast: 96,      // green
@@ -522,6 +534,17 @@ export class GameCore {
   avgFrameMs = 0;
   /** One record banner per run, however far past the old best you go. */
   private recordAnnounced = false;
+  /**
+   * Best score for this mode as it stood when the run began.
+   *
+   * Checkpointing writes the running best to the profile mid-run so a crash
+   * cannot lose it, which means the stored best is no longer a reliable "what
+   * am I beating" — by the time the run ends it is the run's own score.
+   * Comparisons for the record banner and the summary use this instead.
+   */
+  private bestAtStart = 0;
+  /** Milliseconds of play since the last crash-recovery snapshot. */
+  private checkpointTimer = 0;
   /** XP earned in the current run, for the summary. */
   private runXp = 0;
   /** Rank tier at the moment of the last promotion, so each fires once. */
@@ -662,6 +685,11 @@ export class GameCore {
     this.timeScale = 1;
     this.pressure = 1;
     this.recordAnnounced = false;
+    this.bestAtStart = this.profile.modes[mode].bestScore;
+    this.checkpointTimer = 0;
+    // Any leftover snapshot belongs to a run that is now definitively over —
+    // the player chose to start a new one instead of recovering it.
+    clearCheckpoint();
     this.runXp = 0;
     this.rankAtStart = rankFor(this.profile.xp).tier;
 
@@ -713,6 +741,15 @@ export class GameCore {
       this.status = 'paused';
       this.hudDirty = true;
       this.pushHud();
+      // Backgrounding the app is what pauses it, and a backgrounded tab is
+      // exactly what a phone kills when it needs memory. Snapshot now rather
+      // than waiting up to five seconds for the timer that no longer ticks,
+      // and force the profile write through synchronously — the debounce
+      // behind saveProfile is a 400ms timer that a killed tab never runs.
+      try {
+        this.checkpoint();
+        flushProfile();
+      } catch { /* never let a save break the pause */ }
     }
   }
 
@@ -729,16 +766,53 @@ export class GameCore {
     }
   }
 
+  /**
+   * Writes the crash-recovery snapshot and makes the run's profile gains
+   * durable.
+   *
+   * XP, best score and best streak used to be written only in `end()`, so a
+   * run that was interrupted rather than finished lost every one of them. They
+   * are all monotonic — `max` and `+=` — so writing them repeatedly mid-run is
+   * idempotent with what `end()` does afterwards.
+   */
+  private checkpoint(): void {
+    const durationMs = this.runStart < 0 ? 0 : Math.max(0, this.clock - this.runStart);
+    const rec = this.profile.modes[this.config.mode];
+    if (this.score > rec.bestScore) rec.bestScore = this.score;
+    if (this.bestCombo > rec.bestStreak) rec.bestStreak = this.bestCombo;
+    saveProfile(this.profile);
+
+    saveCheckpoint({
+      mode: this.config.mode,
+      score: this.score,
+      solved: this.solved,
+      missed: this.missed,
+      bestCombo: this.bestCombo,
+      avgRtMs: this.rtCount > 0 ? this.rtSum / this.rtCount : 0,
+      fastestRtMs: this.fastestRt,
+      voiceShare: this.solved > 0 ? this.voiceHits / this.solved : 0,
+      durationMs,
+      xpBefore: Math.round(this.profile.xp - this.runXp),
+      xpGained: Math.round(this.runXp),
+    });
+  }
+
   end(): void {
     if (this.status === 'over') return;
     this.status = 'over';
+
+    // The run is over by choice or by death, so there is nothing left to
+    // recover — the summary screen now owns saving it.
+    clearCheckpoint();
 
     const durationMs = this.runStart < 0 ? 0 : Math.max(0, this.clock - this.runStart);
     this.profile.totalPlayMs += durationMs;
 
     const rec = this.profile.modes[this.config.mode];
-    const isRecord = this.score > rec.bestScore;
-    if (isRecord) rec.bestScore = this.score;
+    // Against the best as it stood at the start, not as it stands now:
+    // checkpointing may already have written this run's own score into it.
+    const isRecord = this.score > this.bestAtStart;
+    if (this.score > rec.bestScore) rec.bestScore = this.score;
     if (this.bestCombo > rec.bestStreak) rec.bestStreak = this.bestCombo;
 
     if (this.config.mode === 'daily') {
@@ -1014,7 +1088,7 @@ export class GameCore {
     const banner = this.playBottom - 210;
 
     // Record first, so it never gets buried under a routine combo line.
-    const best = this.profile.modes[this.config.mode].bestScore;
+    const best = this.bestAtStart;
     if (!this.recordAnnounced && best > 0 && this.score > best) {
       this.recordAnnounced = true;
       this.addPopup(this.width / 2, banner, 'NEW RECORD', 45, true);
@@ -1312,6 +1386,16 @@ export class GameCore {
     // teleports through the floor on resume.
     if (frameMs > 250) frameMs = 250;
 
+    // And clamp the other end. A frame time is never meaningfully negative,
+    // but the timestamp can go backwards across a visibility change on some
+    // mobile browsers, and a negative dt runs the eased interpolations
+    // *outwards*: the shockwave radius diverges, canvas `arc` throws on a
+    // negative radius, and every subsequent frame dies in the renderer. The
+    // simulation keeps ticking underneath, so the screen freezes while the
+    // game plays on — answers are then judged against a board the player can
+    // no longer see. Guard the input rather than the twenty places it reaches.
+    if (!(frameMs > 0)) frameMs = 0;   // also catches NaN
+
     // Rolling frame-time average, used to shed effect work on slow devices
     // before the player notices. Cheap: one add and one multiply per frame.
     if (this.status === 'playing' && frameMs > 0) {
@@ -1351,6 +1435,14 @@ export class GameCore {
         steps++;
       }
       if (steps === 5) this.acc = 0;
+
+      // Snapshot on a timer rather than per event: a localStorage write is
+      // synchronous and would show up as a stutter if it rode every answer.
+      this.checkpointTimer += frameMs;
+      if (this.checkpointTimer >= CHECKPOINT_INTERVAL_MS) {
+        this.checkpointTimer = 0;
+        try { this.checkpoint(); } catch { /* never let a save break the loop */ }
+      }
     }
 
     // Decorative state keeps easing even while paused, so the pause overlay

@@ -277,7 +277,12 @@ export const PauseScreen: React.FC<{
 
 // ---------------------------------------------------------------- game over
 
-export type SubmitState = 'idle' | 'sending' | 'done' | 'failed';
+/**
+ * `queued` is not a failure. The run is already written to durable storage and
+ * will be sent on its own; the network simply has not cooperated yet. Showing
+ * it as an error is what made players replay runs that were never lost.
+ */
+export type SubmitState = 'idle' | 'sending' | 'done' | 'queued' | 'failed';
 
 export const GameOverScreen: React.FC<{
   summary: RunSummary;
@@ -287,13 +292,15 @@ export const GameOverScreen: React.FC<{
   submitError: string;
   /** Placement on the board after a successful save, if known. */
   placement: number | null;
+  /** True when this run was rebuilt from a snapshot after the app was killed. */
+  recovered?: boolean;
   onName: (v: string) => void;
   onSubmit: () => void;
   onViewBoard: () => void;
   onAgain: () => void;
   onMenu: () => void;
 }> = ({
-  summary, profile, name, submitState, submitError, placement,
+  summary, profile, name, submitState, submitError, placement, recovered,
   onName, onSubmit, onViewBoard, onAgain, onMenu,
 }) => {
   const delta = summary.xpGained;
@@ -304,9 +311,14 @@ export const GameOverScreen: React.FC<{
       <div className="mf-overlay-inner">
         <div>
           <h2 className="mf-title" style={{ fontSize: 40 }}>
-            {summary.isRecord ? 'NEW RECORD' : 'RUN OVER'}
+            {recovered ? 'RUN RECOVERED' : summary.isRecord ? 'NEW RECORD' : 'RUN OVER'}
           </h2>
           <p className="mf-tagline">{summary.mode} · {fmtTime(summary.durationMs)}</p>
+          {recovered && (
+            <p className="mf-note" style={{ textAlign: 'center' }}>
+              The app closed mid-run. Your progress was saved — nothing is lost.
+            </p>
+          )}
         </div>
 
         <div className="mf-rank">
@@ -325,9 +337,13 @@ export const GameOverScreen: React.FC<{
           it was routinely missed.
         */}
         {summary.score > 0 && (
-          submitState === 'done' ? (
+          submitState === 'done' || submitState === 'queued' ? (
             <div className="mf-placed">
-              {placement !== null ? (
+              {submitState === 'queued' ? (
+                <span className="mf-placed-text">
+                  Saved as {name} — it will reach the board as soon as you have signal.
+                </span>
+              ) : placement !== null ? (
                 <>
                   <span className="mf-placed-rank">#{placement}</span>
                   <span className="mf-placed-text">
