@@ -59,6 +59,14 @@ export interface ModeRecord {
   plays: number;
 }
 
+/** One day of play across every mode. */
+export interface DayStats {
+  runs: number;
+  solved: number;
+  missed: number;
+  ms: number;
+}
+
 export interface Profile {
   v: 2;
   /** Display name on the global leaderboard. Empty until the player sets one. */
@@ -81,8 +89,16 @@ export interface Profile {
   templateRatings: Record<string, number>;
   skills: Record<string, SkillState>;
   modes: Record<GameMode, ModeRecord>;
-  /** Keyed by UTC date, e.g. "2026-07-28". */
+  /** Daily Challenge results, keyed by dailyKey() (IST date, e.g. "2026-07-28"). */
   daily: Record<string, { score: number; correct: number; total: number; ms: number }>;
+  /**
+   * Per-day activity across every mode, keyed like `daily`.
+   *
+   * This is the teacher's view: "what did you actually do today". Lifetime
+   * totals cannot answer that, and the leaderboard only sees saved bests.
+   * Kept to the last ~45 days.
+   */
+  days: Record<string, DayStats>;
   totalPlayMs: number;
   voiceAnswers: number;
   settings: Settings;
@@ -135,6 +151,7 @@ export function defaultProfile(): Profile {
       zen: emptyModeRecord(),
     },
     daily: {},
+    days: {},
     totalPlayMs: 0,
     voiceAnswers: 0,
     settings: defaultSettings(),
@@ -157,6 +174,7 @@ function reconcile(raw: Partial<Profile> | null): Profile {
     skills: { ...(raw.skills ?? {}) },
     templateRatings: { ...(raw.templateRatings ?? {}) },
     daily: { ...(raw.daily ?? {}) },
+    days: { ...(raw.days ?? {}) },
     residuals: Array.isArray(raw.residuals) ? raw.residuals.slice(-12) : [],
     syncQueue: Array.isArray(raw.syncQueue) ? raw.syncQueue.slice(-MAX_QUEUE) : [],
     v: 2,

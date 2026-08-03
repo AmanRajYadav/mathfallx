@@ -1,5 +1,5 @@
 import React from 'react';
-import { Delete, Home, Keyboard, Mic, MicOff, Pause, TriangleAlert } from 'lucide-react';
+import { Delete, Keyboard, Mic, MicOff, Pause, TriangleAlert } from 'lucide-react';
 import type { RecognizerState } from '../../voice/VoiceInput';
 
 export interface VoiceUiState {
@@ -22,7 +22,6 @@ interface ControlsProps {
   input: string;
   onKey: (k: string) => void;
   onPause: () => void;
-  onMenu: () => void;
 }
 
 /** Human-readable status line for the microphone. */
@@ -63,7 +62,7 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'del'];
 
 const Controls: React.FC<ControlsProps> = ({
   bottomRef, voice, onToggleVoice, keypadOpen, onToggleKeypad, input, onKey,
-  onPause, onMenu,
+  onPause,
 }) => {
   const { label, tone } = voiceLabel(voice);
   const showMatch = voice.lastMatch !== null && Date.now() - voice.lastMatchAt < 1100;
@@ -130,14 +129,13 @@ const Controls: React.FC<ControlsProps> = ({
         </button>
       </div>
 
-      {/* Installed to the home screen there is no browser chrome at all, so
-          without these there is literally no way out of a run. */}
+      {/* Pause only. There used to be a Menu button beside it, and mid-game
+          it was mostly pressed by accident — one stray tap threw away the run.
+          Everything Menu offered is still one deliberate step away, behind
+          Pause, where a slip costs nothing. */}
       <div className="mf-nav">
         <button type="button" className="mf-nav-btn" onPointerDown={(e) => { e.preventDefault(); onPause(); }}>
           <Pause size={14} /> Pause
-        </button>
-        <button type="button" className="mf-nav-btn" onPointerDown={(e) => { e.preventDefault(); onMenu(); }}>
-          <Home size={14} /> Menu
         </button>
       </div>
 

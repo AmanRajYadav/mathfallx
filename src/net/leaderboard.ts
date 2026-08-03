@@ -93,13 +93,20 @@ export function playerId(): string {
   }
 }
 
-/** Trims a display name to what the table constraint will accept. */
+/**
+ * Trims a display name to what the table constraint will accept.
+ *
+ * \p{M} matters: Devanagari vowel signs (the ु in आरुषि) are combining
+ * marks, not letters, and filtering on \p{L} alone silently mangled every
+ * Hindi name. The cap slices code points, not UTF-16 units, so it cannot cut
+ * a character in half — Postgres's char_length counts the same way.
+ */
 export function sanitizeName(raw: string): string {
-  return raw
+  const cleaned = raw
     .replace(/\s+/g, ' ')
-    .replace(/[^\p{L}\p{N} _.\-']/gu, '')
-    .trim()
-    .slice(0, 16);
+    .replace(/[^\p{L}\p{M}\p{N} _.\-']/gu, '')
+    .trim();
+  return [...cleaned].slice(0, 16).join('');
 }
 
 export interface SubmitResult {

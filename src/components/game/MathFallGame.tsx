@@ -23,6 +23,13 @@ import { enqueue as queueRun, flush as flushOutbox, has as stillQueued, startOut
 import { clearCheckpoint, loadCheckpoint, summaryFrom } from '../../engine/checkpoint';
 import '../../styles/game.css';
 
+/**
+ * How long the game-over screen shows "Saving as X — tap to change" before the
+ * save fires on its own. Long enough to read and tap on a shared phone, short
+ * enough that nobody is waiting on it.
+ */
+const AUTOSAVE_GRACE_MS = 4000;
+
 const EMPTY_HUD: HudState = {
   score: 0, combo: 0, multiplier: 1, shield: 3, maxShield: 3, wave: 1,
   overdrive: 0, overdriveActive: false, xp: 0, xpGained: 0,
@@ -45,6 +52,13 @@ const MathFallGame: React.FC = () => {
    * of inserting a second one for the same run.
    */
   const runIdRef = useRef<string | null>(null);
+  /** Auto-save arms once per run — never re-armed by typing or re-renders. */
+  const autoArmedRef = useRef(false);
+  const autoTimerRef = useRef(0);
+  /** Name the run is about to be auto-saved under, while the grace window runs. */
+  const [pendingAs, setPendingAs] = useState<string | null>(null);
+  /** Latest submitRun without making the auto-save effect depend on it. */
+  const submitRunRef = useRef<() => void>(() => {});
   const rendererRef = useRef<Renderer | null>(null);
   const voiceRef = useRef<VoiceInput | null>(null);
   const rafRef = useRef<number>(0);
@@ -401,6 +415,14 @@ const MathFallGame: React.FC = () => {
       }
     }
 
+    // A grace-window save that has not fired yet fires NOW, or "Play again"
+    // pressed within four seconds of dying would silently discard the run.
+    if (autoTimerRef.current) {
+      window.clearTimeout(autoTimerRef.current);
+      autoTimerRef.current = 0;
+      submitRunRef.current();
+    }
+
     // Everything the previous run left behind, cleared together.
     inputRef.current = '';
     setInput('');
@@ -408,7 +430,9 @@ const MathFallGame: React.FC = () => {
     setSubmitState('idle');
     setPlacement(null);
     setRecovered(false);
+    setPendingAs(null);
     runIdRef.current = null;
+    autoArmedRef.current = false;
     setVoiceUi((v) => ({ ...v, heard: '', lastMatch: null, lastMatchAt: 0, miss: null }));
     setScreenBoth('playing');
     game.start(mode, skills);
@@ -717,6 +741,11 @@ const MathFallGame: React.FC = () => {
     }, runIdRef.current ?? undefined);
     runIdRef.current = id;
 
+    // The run is durable in the outbox now, so the crash snapshot has done its
+    // job. Kept until this exact moment: a phone killed on the game-over
+    // screen *before* the save was queued must still recover the run.
+    clearCheckpoint();
+
     setSubmitState('sending');
     void flushOutbox().then(() => {
       // Gone from the queue means it landed — or was permanently rejected,
@@ -737,20 +766,48 @@ const MathFallGame: React.FC = () => {
       setSubmitError('');
     });
   }, [summary, boardName, hud.wave]);
+  submitRunRef.current = submitRun;
 
   /**
-   * Saves a finished run without waiting to be asked.
+   * Saves a finished run without waiting to be asked — but never mid-keystroke.
    *
-   * The Save button was the single point of failure for every run: miss it —
-   * because the phone rang, the battery died, or the page reloaded under you —
-   * and hours of play were gone. A player whose name we already know does not
-   * need to confirm that they want their score kept.
+   * The first version of this fired whenever the name field was non-empty,
+   * which meant it fired on the FIRST LETTER a new player typed: the board
+   * filled with runs saved as "A", "1" and "s", and the input vanished under
+   * students who were still writing. Root cause: the effect depended on the
+   * live text of the field.
+   *
+   * Now it arms exactly once per run, only with a name that was saved by a
+   * previous explicit Save, and holds a short grace window with a visible
+   * "Change name" escape hatch — a shared phone always prefills the *previous*
+   * player's name, and the next student needs a moment to claim the run.
+   * Typing has no effect whatsoever until Save is pressed.
    */
   useEffect(() => {
-    if (screen !== 'over' || !summary || submitState !== 'idle') return;
-    if (summary.score <= 0 || !boardName.trim()) return;
-    submitRun();
-  }, [screen, summary, submitState, boardName, submitRun]);
+    if (screen !== 'over' || !summary || autoArmedRef.current) return;
+    autoArmedRef.current = true;
+    const saved = profileRef.current.name.trim();
+    if (!saved || summary.score <= 0) return;
+    setPendingAs(saved);
+    autoTimerRef.current = window.setTimeout(() => {
+      autoTimerRef.current = 0;
+      setPendingAs(null);
+      submitRunRef.current();
+    }, AUTOSAVE_GRACE_MS);
+    return () => {
+      if (autoTimerRef.current) { window.clearTimeout(autoTimerRef.current); autoTimerRef.current = 0; }
+    };
+  }, [screen, summary]);
+
+  /** The player wants to put a different name on this run. */
+  const changeName = useCallback(() => {
+    if (autoTimerRef.current) { window.clearTimeout(autoTimerRef.current); autoTimerRef.current = 0; }
+    setPendingAs(null);
+    // Back to the editable state. If the run already went out under the old
+    // name, saving again submits a fresh row under the corrected one.
+    setSubmitState('idle');
+    setPlacement(null);
+  }, []);
 
   /**
    * Upgrades "queued" to "saved" once the background drain gets it out.
@@ -804,7 +861,9 @@ const MathFallGame: React.FC = () => {
   useEffect(() => {
     const c = loadCheckpoint();
     if (!c) return;
-    clearCheckpoint();
+    // Deliberately NOT cleared here. The snapshot lives until the run is
+    // queued for the leaderboard (or a new run starts) — clearing on load
+    // meant a phone that died twice in a row lost the run after all.
     setSummary(summaryFrom(c));
     setRecovered(true);
     setScreenBoth('over');
@@ -886,7 +945,6 @@ const MathFallGame: React.FC = () => {
             input={input}
             onKey={handleKey}
             onPause={pauseGame}
-            onMenu={goMenu}
           />
         </>
       )}
@@ -918,8 +976,10 @@ const MathFallGame: React.FC = () => {
           submitError={submitError}
           placement={placement}
           recovered={recovered}
+          pendingAs={pendingAs}
           onName={setBoardName}
           onSubmit={submitRun}
+          onChangeName={changeName}
           onViewBoard={() => { setBoardMode(summary.mode); setScreenBoth('board'); }}
           onAgain={() => startGame(summary.mode)}
           onMenu={goMenu}

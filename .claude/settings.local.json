@@ -9,5 +9,8 @@
       "Bash(rm:*)"
     ],
     "deny": []
-  }
+  },
+  "enabledMcpjsonServers": [
+    "supabase"
+  ]
 }

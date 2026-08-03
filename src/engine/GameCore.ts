@@ -27,7 +27,7 @@ import { clearCheckpoint, saveCheckpoint } from './checkpoint';
 import { generateDailySet, generateItem, type Item, type Skill } from './generator';
 import { POWER_UPS, dropChance, rollPowerUp, type PowerUpType } from './powerups';
 import { praiseForCombo, praiseForSpeed, type PraiseTier } from './praise';
-import { Rng, dailySeed } from './rng';
+import { Rng, dailyKey, dailySeed } from './rng';
 import {
   adaptiveStateOf,
   flushProfile,
@@ -801,10 +801,6 @@ export class GameCore {
     if (this.status === 'over') return;
     this.status = 'over';
 
-    // The run is over by choice or by death, so there is nothing left to
-    // recover — the summary screen now owns saving it.
-    clearCheckpoint();
-
     const durationMs = this.runStart < 0 ? 0 : Math.max(0, this.clock - this.runStart);
     this.profile.totalPlayMs += durationMs;
 
@@ -815,8 +811,30 @@ export class GameCore {
     if (this.score > rec.bestScore) rec.bestScore = this.score;
     if (this.bestCombo > rec.bestStreak) rec.bestStreak = this.bestCombo;
 
+    // Per-day activity, for the stats screen. A teacher checking a student's
+    // phone wants "what did you do today", which none of the lifetime
+    // aggregates can answer.
+    const dk = dailyKey();
+    const day = this.profile.days[dk] ?? { runs: 0, solved: 0, missed: 0, ms: 0 };
+    day.runs += 1;
+    day.solved += this.solved;
+    day.missed += this.missed;
+    day.ms += durationMs;
+    this.profile.days[dk] = day;
+    const dayKeys = Object.keys(this.profile.days).sort();
+    while (dayKeys.length > 45) delete this.profile.days[dayKeys.shift()!];
+
+    // The snapshot is NOT cleared here — it is rewritten with the final
+    // numbers and lives until the score is queued for the leaderboard. A
+    // phone killed on the game-over screen before the save fires would
+    // otherwise lose the run at the very last step.
+    try { this.checkpoint(); } catch { /* the run itself must still end */ }
+
     if (this.config.mode === 'daily') {
-      const key = new Date().toISOString().slice(0, 10);
+      // dailyKey(), not raw UTC: the two disagree for anyone west of
+      // Greenwich-or-east-of-IST once the day boundary moved to IST, and a
+      // mismatched key would mark the wrong day as played.
+      const key = dk;
       const prev = this.profile.daily[key];
       if (!prev || this.score > prev.score) {
         this.profile.daily[key] = {

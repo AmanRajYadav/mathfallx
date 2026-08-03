@@ -148,11 +148,27 @@ await check('the engine checkpoints on pause', () => {
   assert.ok(/flushProfile\(\)/.test(pause.slice(0, 800)), 'pause does not force the profile write through');
 });
 
-await check('starting and ending a run clear the snapshot', () => {
+await check('the snapshot lives until the score is queued', () => {
   const start = coreSrc.slice(coreSrc.indexOf('  start(mode: GameMode'), coreSrc.indexOf('  end(): void {'));
-  const end = coreSrc.slice(coreSrc.indexOf('  end(): void {'));
+  const end = coreSrc.slice(coreSrc.indexOf('  end(): void {'), coreSrc.indexOf('const summary: RunSummary'));
   assert.ok(/clearCheckpoint\(\)/.test(start), 'start does not clear a stale checkpoint');
-  assert.ok(/clearCheckpoint\(\)/.test(end.slice(0, 900)), 'end does not clear the checkpoint');
+  // end() must NOT clear: a phone killed on the game-over screen before the
+  // save fires still needs the run. It rewrites the final numbers instead.
+  assert.ok(!/clearCheckpoint\(\)/.test(end), 'end() must not clear the checkpoint — the save owns that');
+  assert.ok(/this\.checkpoint\(\);/.test(end), 'end() must write the final snapshot');
+  // The clear happens in the shell, only after the run is safely in the outbox.
+  const submit = shellSrc.slice(shellSrc.indexOf('const submitRun = useCallback'));
+  const submitBody = submit.slice(0, submit.indexOf('}, [summary, boardName'));
+  const queueAt = submitBody.indexOf('queueRun(');
+  const clearAt = submitBody.indexOf('clearCheckpoint()');
+  assert.ok(clearAt > queueAt && queueAt > -1, 'submitRun must clear the checkpoint only after queueing');
+  // And recovery must not clear on load — a phone that dies twice in a row
+  // would lose the run after all.
+  const recover = shellSrc.slice(shellSrc.indexOf('const c = loadCheckpoint()'));
+  assert.ok(
+    !/clearCheckpoint\(\)/.test(recover.slice(0, recover.indexOf('}, [setScreenBoth]'))),
+    'recovery must keep the snapshot until the run is queued',
+  );
 });
 
 await check('the record banner survives mid-run best-score writes', () => {
@@ -192,11 +208,54 @@ await check('submitRun does not call the network directly', () => {
   );
 });
 
-await check('a known name saves without a tap', () => {
+await check('a known name saves without a tap — but never mid-keystroke', () => {
+  // The original auto-save fired whenever the name field was non-empty, which
+  // meant it fired on the FIRST LETTER a new player typed. The production
+  // board filled with runs saved as "A", "1" and "s". The effect must arm
+  // once per run and must not depend on the live text of the field.
+  const at = shellSrc.indexOf('if (screen !== \'over\' || !summary || autoArmedRef.current) return;');
+  assert.ok(at > -1, 'auto-save must be gated on a once-per-run flag, not on submitState');
+  const effect = shellSrc.slice(at);
+  const deps = effect.slice(0, 1400).match(/\}, \[([^\]]*)\]\);/);
+  assert.ok(deps, 'auto-save effect has no dependency list');
   assert.ok(
-    /if \(screen !== 'over' \|\| !summary \|\| submitState !== 'idle'\) return;/.test(shellSrc),
-    'no auto-save effect on the game-over screen',
+    !deps[1].includes('boardName'),
+    'auto-save must not re-run on name keystrokes — that is the "saved as A" bug',
   );
+  assert.ok(/AUTOSAVE_GRACE_MS/.test(shellSrc), 'auto-save must wait through a visible grace window');
+  assert.ok(
+    /profileRef\.current\.name\.trim\(\)/.test(effect.slice(0, 400)),
+    'auto-save must use the previously *saved* name, never the live field',
+  );
+});
+
+await check('names are free-form: anything non-empty, capped at 16', async () => {
+  // The teacher's rule: students type whatever they like, up to 16
+  // characters — including one-letter names and non-Latin scripts. The cap
+  // and the character filter live in sanitizeName.
+  const lb = await load('src/net/leaderboard.ts');
+  assert.equal(lb.sanitizeName('Aman Raj Yadav 10th A'), 'Aman Raj Yadav 1', '16-char cap');
+  assert.equal(lb.sanitizeName('आरुषि'), 'आरुषि', 'Devanagari names must survive sanitising');
+  assert.equal(lb.sanitizeName('A'), 'A', 'a single letter is a valid name');
+  assert.equal(lb.sanitizeName('  <b>Om</b>  '), 'bOmb', 'markup is stripped, text kept');
+});
+
+await check('gameplay has no Menu button — only Pause', () => {
+  const controlsSrc = readFileSync(join(root, 'src/components/game/Controls.tsx'), 'utf8');
+  assert.ok(!/onMenu/.test(controlsSrc), 'a stray tap on Menu mid-run throws the run away');
+  assert.ok(/onPause/.test(controlsSrc), 'Pause must remain');
+  // Menu stays reachable, one deliberate step away, behind Pause.
+  const overlaysSrc = readFileSync(join(root, 'src/components/game/Overlays.tsx'), 'utf8');
+  const pauseScreen = overlaysSrc.slice(overlaysSrc.indexOf('export const PauseScreen'));
+  assert.ok(/Main menu/.test(pauseScreen.slice(0, 900)), 'the pause screen must offer Main menu');
+});
+
+await check('the day flips at midnight IST, not 5:30am', () => {
+  const rngSrc = readFileSync(join(root, 'src/engine/rng.ts'), 'utf8');
+  assert.ok(/DAY_OFFSET_MS = 5\.5 \* 60 \* 60 \* 1000/.test(rngSrc), 'no IST day offset');
+  // GameCore must key the daily record through dailyKey(), not raw UTC —
+  // the two disagree between midnight and 5:30am IST.
+  assert.ok(!/toISOString\(\)\.slice\(0, 10\)/.test(coreSrc), 'GameCore must not build day keys from raw UTC');
 });
 
 if (outbox) {
@@ -277,6 +336,60 @@ if (outbox) {
     storage.failWrites = true;
     assert.doesNotThrow(() => outbox.enqueue(run()), 'a blocked localStorage must not break saving');
     storage.failWrites = false;
+  });
+
+  await check('a delivered run cannot be delivered twice', async () => {
+    // Observed in production: identical rows eleven seconds apart, from
+    // pressing Save right after the auto-save had already sent the run.
+    storage.map.clear();
+    const id = outbox.enqueue(run());
+    fetchImpl = async () => ({ ok: true, status: 201, text: async () => '' });
+    await outbox.flush();
+    assert.equal(outbox.has(id), false, 'first send should drain the queue');
+
+    outbox.enqueue(run(), id);          // the Save button, pressed again
+    assert.equal(outbox.has(id), false, 'a re-queue of a sent run must be refused');
+  });
+
+  await check('correcting the name after sending is allowed through', async () => {
+    storage.map.clear();
+    const id = outbox.enqueue(run({ name: 'Aarushi' }));
+    fetchImpl = async () => ({ ok: true, status: 201, text: async () => '' });
+    await outbox.flush();
+
+    // Wrong player's name went out on a shared phone; the correction is a
+    // deliberate new submission, not a duplicate.
+    outbox.enqueue(run({ name: 'Utsav' }), id);
+    assert.equal(outbox.has(id), true, 'a rename must be queued');
+  });
+}
+
+section('the daily challenge changes at midnight IST');
+
+{
+  const rng = await load('src/engine/rng.ts');
+
+  await check('11:59pm and 12:01am IST are different days', () => {
+    // 18:29 UTC = 23:59 IST; 18:31 UTC = 00:01 IST next day.
+    const before = new Date('2026-08-04T18:29:00Z');
+    const after = new Date('2026-08-04T18:31:00Z');
+    assert.notEqual(rng.dailySeed(before), rng.dailySeed(after), 'seed must change at IST midnight');
+    assert.equal(rng.dailySeed(before), 20260804);
+    assert.equal(rng.dailySeed(after), 20260805);
+    assert.equal(rng.dailyKey(after), '2026-08-05');
+  });
+
+  await check('late-night play gets today, not yesterday', () => {
+    // 20:00 UTC = 1:30am IST — under the old UTC boundary this was still the
+    // *previous* day's questions, which players reported as "the daily never
+    // refreshes".
+    const lateNight = new Date('2026-08-04T20:00:00Z');
+    assert.equal(rng.dailySeed(lateNight), 20260805);
+  });
+
+  await check('the countdown targets IST midnight', () => {
+    const now = new Date('2026-08-04T18:00:00Z'); // 23:30 IST
+    assert.equal(rng.msUntilNextDay(now), 30 * 60 * 1000, 'half an hour to IST midnight');
   });
 }
 

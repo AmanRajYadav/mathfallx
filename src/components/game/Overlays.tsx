@@ -6,6 +6,7 @@ import {
 import type { RunSummary } from '../../engine/GameCore';
 import { RANKS, rankFor } from '../../engine/adaptive';
 import { dailyStreak, ratingHistory, type GameMode, type Profile } from '../../engine/profile';
+import { dailyKey } from '../../engine/rng';
 import type { Skill } from '../../engine/generator';
 import { VOICE_LANGUAGES } from '../../voice/recognizer';
 import { hapticsSupported, vibrate } from '../../audio/sound';
@@ -294,14 +295,18 @@ export const GameOverScreen: React.FC<{
   placement: number | null;
   /** True when this run was rebuilt from a snapshot after the app was killed. */
   recovered?: boolean;
+  /** Name the run will be auto-saved under while the grace window is open. */
+  pendingAs?: string | null;
   onName: (v: string) => void;
   onSubmit: () => void;
+  /** Cancel the pending auto-save / reopen the name field to correct it. */
+  onChangeName: () => void;
   onViewBoard: () => void;
   onAgain: () => void;
   onMenu: () => void;
 }> = ({
-  summary, profile, name, submitState, submitError, placement, recovered,
-  onName, onSubmit, onViewBoard, onAgain, onMenu,
+  summary, profile, name, submitState, submitError, placement, recovered, pendingAs,
+  onName, onSubmit, onChangeName, onViewBoard, onAgain, onMenu,
 }) => {
   const delta = summary.xpGained;
   const rank = rankFor(profile.xp);
@@ -337,7 +342,17 @@ export const GameOverScreen: React.FC<{
           it was routinely missed.
         */}
         {summary.score > 0 && (
-          submitState === 'done' || submitState === 'queued' ? (
+          pendingAs ? (
+            /* Auto-save is about to fire. The only job of this state is to be
+               interruptible: on a shared phone the prefilled name is the
+               PREVIOUS player's, and this is the moment to say so. */
+            <div className="mf-placed">
+              <span className="mf-placed-text">Saving as <b>{pendingAs}</b>…</span>
+              <button className="mf-btn mf-btn--ghost" onClick={onChangeName}>
+                Not {pendingAs}? Change name
+              </button>
+            </div>
+          ) : submitState === 'done' || submitState === 'queued' ? (
             <div className="mf-placed">
               {submitState === 'queued' ? (
                 <span className="mf-placed-text">
@@ -355,6 +370,9 @@ export const GameOverScreen: React.FC<{
               )}
               <button className="mf-btn mf-btn--ghost" onClick={onViewBoard}>
                 <Trophy size={16} /> View leaderboard
+              </button>
+              <button className="mf-btn mf-btn--ghost" onClick={onChangeName}>
+                Wrong name? Fix it
               </button>
             </div>
           ) : (
@@ -818,6 +836,8 @@ export const StatsScreen: React.FC<{ profile: Profile; onBack: () => void }> = (
   const acc = profile.answers > 0 ? profile.correct / profile.answers : 0;
   const dailyKeys = Object.keys(profile.daily).sort().reverse().slice(0, 7);
   const streak = dailyStreak(profile);
+  const today = profile.days[dailyKey()];
+  const weekKeys = Object.keys(profile.days).sort().reverse().slice(0, 7);
 
   return (
     <div className="mf-overlay">
@@ -837,15 +857,52 @@ export const StatsScreen: React.FC<{ profile: Profile; onBack: () => void }> = (
 
         <Sparkline values={ratingHistory(profile, 200)} color={rank.color} />
 
+        {/* Today first: for a teacher checking a student's phone, "what did
+            you do today" is the question — lifetime totals cannot answer it. */}
+        {today && (
+          <div className="mf-grid2">
+            <Stat k="Solved today" v={today.solved.toLocaleString()} />
+            <Stat k="Played today" v={fmtTime(today.ms)} sub={`${today.runs} ${today.runs === 1 ? 'run' : 'runs'}`} />
+          </div>
+        )}
+
         <div className="mf-grid2">
           <Stat k="Daily streak" v={streak} sub={streak === 1 ? 'day' : 'days'} />
           <Stat k="Problems" v={profile.answers.toLocaleString()} />
           <Stat k="Accuracy" v={`${Math.round(acc * 100)}%`} />
+          <Stat k="Best chain" v={Math.max(...Object.values(profile.modes).map((m) => m.bestStreak))} />
+          <Stat k="Easy best" v={profile.modes.easy.bestScore.toLocaleString()} />
           <Stat k="Arcade best" v={profile.modes.arcade.bestScore.toLocaleString()} />
           <Stat k="Blitz best" v={profile.modes.blitz.bestScore.toLocaleString()} />
-          <Stat k="Best chain" v={Math.max(...Object.values(profile.modes).map((m) => m.bestStreak))} />
           <Stat k="Time played" v={fmtTime(profile.totalPlayMs)} />
         </div>
+
+        {weekKeys.length > 0 && (
+          <>
+            <div className="mf-h2">
+              <CalendarDays size={13} style={{ display: 'inline', marginRight: 5 }} />
+              Last 7 days
+            </div>
+            <div>
+              {weekKeys.map((k) => {
+                const d = profile.days[k];
+                const dayAcc = d.solved + d.missed > 0 ? Math.round((d.solved / (d.solved + d.missed)) * 100) : 0;
+                return (
+                  <div className="mf-row" key={k}>
+                    <span className="mf-row-label">
+                      {k.slice(5)}
+                      <span className="mf-row-hint">{d.runs} {d.runs === 1 ? 'run' : 'runs'} · {dayAcc}% accuracy</span>
+                    </span>
+                    <span className="mf-stat-v" style={{ fontSize: 17 }}>
+                      {d.solved.toLocaleString()}
+                      <span className="mf-stat-k" style={{ marginLeft: 6 }}>{fmtTime(d.ms)}</span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
 
         <div className="mf-h2">Skill mastery</div>
         <div>

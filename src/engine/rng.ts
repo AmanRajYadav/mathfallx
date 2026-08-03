@@ -75,19 +75,39 @@ export class Rng {
   }
 }
 
-/** `20260728` — the UTC calendar date as an integer. */
+/**
+ * The "day" for everything daily rolls over at midnight IST, not midnight UTC.
+ *
+ * Every player is in an Indian classroom, and with a UTC boundary the new
+ * Daily Challenge appeared at 5:30 in the morning — anyone playing late at
+ * night was still being served "yesterday's" questions, which read as the
+ * daily never refreshing. A fixed offset rather than the device timezone, so
+ * the set stays identical for everyone and a mis-set phone clock cannot fork
+ * it.
+ */
+const DAY_OFFSET_MS = 5.5 * 60 * 60 * 1000; // IST = UTC+5:30
+
+/** The current date shifted so its UTC fields read as IST wall-clock time. */
+function localDay(d: Date): Date {
+  return new Date(d.getTime() + DAY_OFFSET_MS);
+}
+
+/** `20260728` — the IST calendar date as an integer. */
 export function dailySeed(d: Date = new Date()): number {
-  return d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
+  const s = localDay(d);
+  return s.getUTCFullYear() * 10000 + (s.getUTCMonth() + 1) * 100 + s.getUTCDate();
 }
 
 /** `2026-07-28` — stable key for storing per-day results. */
 export function dailyKey(d: Date = new Date()): string {
+  const s = localDay(d);
   const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
+  return `${s.getUTCFullYear()}-${p(s.getUTCMonth() + 1)}-${p(s.getUTCDate())}`;
 }
 
-/** Milliseconds until the next UTC midnight, for the daily-reset countdown. */
-export function msUntilNextUtcDay(now: Date = new Date()): number {
-  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+/** Milliseconds until the next IST midnight, for the daily-reset countdown. */
+export function msUntilNextDay(now: Date = new Date()): number {
+  const s = localDay(now);
+  const next = Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), s.getUTCDate() + 1) - DAY_OFFSET_MS;
   return next - now.getTime();
 }

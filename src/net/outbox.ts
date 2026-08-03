@@ -63,6 +63,40 @@ export function pendingCount(): number {
   return read().length;
 }
 
+// ------------------------------------------------------------- sent registry
+//
+// The server has no idempotency key, so the client must remember what it has
+// already delivered. Without this, pressing Save right after an auto-save
+// re-queued a run that had already left the queue and the board got the same
+// run twice — observed in production as identical rows eleven seconds apart.
+
+const SENT_KEY = 'mathfall.outbox.sent';
+const SENT_MAX = 50;
+
+function readSent(): Array<{ id: string; name: string }> {
+  try {
+    const raw = localStorage.getItem(SENT_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? (parsed as Array<{ id: string; name: string }>) : [];
+  } catch {
+    return [];
+  }
+}
+
+function recordSent(id: string, name: string): void {
+  try {
+    const rows = readSent().filter((r) => r.id !== id);
+    rows.push({ id, name: name.toLowerCase() });
+    localStorage.setItem(SENT_KEY, JSON.stringify(rows.slice(-SENT_MAX)));
+  } catch { /* losing the registry only risks a duplicate, never a run */ }
+}
+
+/** Whether this run already reached the server under this name. */
+function wasSent(id: string, name: string): boolean {
+  const key = name.toLowerCase();
+  return readSent().some((r) => r.id === id && r.name === key);
+}
+
 /**
  * Records a finished run. Returns its queue id.
  *
@@ -73,6 +107,11 @@ export function pendingCount(): number {
 export function enqueue(p: SubmitPayload, id?: string): string {
   const rows = read();
   const runId = id ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+  // Already delivered under this exact name: queueing it again would put the
+  // same run on the board twice. A *different* name is allowed through — that
+  // is a deliberate correction, not a duplicate.
+  if (id && wasSent(id, p.name)) return id;
 
   const existing = rows.findIndex((r) => r.id === runId);
   const entry: QueuedRun = { ...p, id: runId, queuedAt: Date.now(), tries: 0 };
@@ -117,6 +156,7 @@ export async function flush(): Promise<void> {
       const res = await submitScore(row);
 
       if (res.ok) {
+        recordSent(row.id, row.name);
         remove(row.id);
       } else if (res.retry === false) {
         // Permanently rejected. Keeping it would mean retrying forever.
