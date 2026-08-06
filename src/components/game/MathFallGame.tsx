@@ -759,7 +759,10 @@ const MathFallGame: React.FC = () => {
       if (!stillQueued(id)) {
         setSubmitState('done');
         setSubmitError('');
-        setBoardMode(s.mode);
+        // Only while the summary is still on screen. Once the player has
+        // moved on — to the board, to a new run — their current view is
+        // theirs, and a late network reply must not redirect it.
+        if (screenRef.current === 'over') setBoardMode(s.mode);
         playSfx('record');
         // Report the placement straight away. "You're 4th" is the answer the
         // player actually wanted when they typed their name.
@@ -834,7 +837,10 @@ const MathFallGame: React.FC = () => {
       if (!stillQueued(id)) {
         window.clearInterval(timer);
         setSubmitState('done');
-        setBoardMode(summary.mode);
+        // Deliberately does NOT touch boardMode. This fires up to a minute
+        // after the run ended, by which point the player may be reading a
+        // different mode's board — and having the tab jump back under them is
+        // exactly the kind of thing that reads as the app glitching.
         void fetchRank(summary.mode, name).then(setPlacement).catch(() => setPlacement(null));
       } else if (tries >= 12) {
         window.clearInterval(timer);

@@ -10,7 +10,10 @@ import { dailyKey } from '../../engine/rng';
 import type { Skill } from '../../engine/generator';
 import { VOICE_LANGUAGES } from '../../voice/recognizer';
 import { hapticsSupported, vibrate } from '../../audio/sound';
-import { fetchTop, playerId, type LeaderboardResult } from '../../net/leaderboard';
+import {
+  fetchDailyHistory, fetchStreaks, fetchTop, playerId,
+  type DailyRow, type LeaderboardResult, type StreakRow,
+} from '../../net/leaderboard';
 
 export type Screen =
   | 'title' | 'playing' | 'paused' | 'over' | 'settings' | 'stats' | 'board' | 'achievements';
@@ -770,12 +773,45 @@ export const LeaderboardScreen: React.FC<{
   });
   const me = React.useMemo(() => playerId(), []);
 
+  /** Daily-only: how regularly each player turns up, keyed by lowercased name. */
+  const [streaks, setStreaks] = React.useState<Map<string, StreakRow>>(new Map());
+  const [showLog, setShowLog] = React.useState(false);
+  const [log, setLog] = React.useState<DailyRow[] | null>(null);
+
   React.useEffect(() => {
     let cancelled = false;
     setState({ status: 'loading', rows: [], selfIndex: -1 });
     void fetchTop(mode, 50).then((r) => { if (!cancelled) setState(r); });
     return () => { cancelled = true; };
   }, [mode]);
+
+  // Streaks only mean something for the Daily, which is the one mode where
+  // everyone gets the same problems and "played today" is a real event.
+  React.useEffect(() => {
+    if (mode !== 'daily') { setStreaks(new Map()); setShowLog(false); return; }
+    let cancelled = false;
+    void fetchStreaks().then((m) => { if (!cancelled) setStreaks(m); });
+    return () => { cancelled = true; };
+  }, [mode]);
+
+  React.useEffect(() => {
+    if (!showLog || log !== null) return;
+    let cancelled = false;
+    void fetchDailyHistory().then((rows) => { if (!cancelled) setLog(rows); });
+    return () => { cancelled = true; };
+  }, [showLog, log]);
+
+  // Group the flat history into days, newest first. The view already sorts by
+  // day desc then score desc, so insertion order is the display order.
+  const byDay = React.useMemo(() => {
+    const out: Array<{ day: string; rows: DailyRow[] }> = [];
+    for (const r of log ?? []) {
+      const last = out[out.length - 1];
+      if (last && last.day === r.day) last.rows.push(r);
+      else out.push({ day: r.day, rows: [r] });
+    }
+    return out;
+  }, [log]);
 
   return (
     <div className="mf-overlay">
@@ -806,18 +842,63 @@ export const LeaderboardScreen: React.FC<{
 
         {state.rows.length > 0 && (
           <div className="mf-board">
-            {state.rows.map((r, i) => (
-              <div
-                key={`${r.player_id}-${i}`}
-                className={'mf-board-row' + (r.player_id === me ? ' mf-board-row--me' : '')}
-              >
-                <span className="mf-board-rank">{i + 1}</span>
-                <span className="mf-board-name">{r.name}</span>
-                <span className="mf-board-meta">w{r.wave} · {Math.round(r.accuracy * 100)}%</span>
-                <span className="mf-board-score">{r.score.toLocaleString()}</span>
+            {state.rows.map((r, i) => {
+              const st = mode === 'daily' ? streaks.get(r.name.toLowerCase()) : undefined;
+              return (
+                <div
+                  key={`${r.player_id}-${i}`}
+                  className={'mf-board-row' + (r.player_id === me ? ' mf-board-row--me' : '')}
+                >
+                  <span className="mf-board-rank">{i + 1}</span>
+                  <span className="mf-board-name">
+                    {r.name}
+                    {/* Turning up every day is its own achievement, and the
+                        score column cannot show it. */}
+                    {st && st.current_streak > 0 && (
+                      <span
+                        className="mf-streak"
+                        title={`${st.current_streak}-day streak · ${st.days_played} days played`}
+                      >
+                        🔥{st.current_streak}
+                      </span>
+                    )}
+                  </span>
+                  <span className="mf-board-meta">w{r.wave} · {Math.round(r.accuracy * 100)}%</span>
+                  <span className="mf-board-score">{r.score.toLocaleString()}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {mode === 'daily' && (
+          <>
+            <button className="mf-btn mf-btn--ghost" onClick={() => setShowLog((v) => !v)}>
+              <CalendarDays size={16} /> {showLog ? 'Hide' : 'Show'} daily history
+            </button>
+
+            {showLog && log === null && <p className="mf-note">Loading history…</p>}
+            {showLog && log !== null && byDay.length === 0 && (
+              <p className="mf-note">Nobody has played a Daily Challenge yet.</p>
+            )}
+            {showLog && byDay.map(({ day, rows }) => (
+              <div key={day}>
+                <div className="mf-h2">{day}</div>
+                <div className="mf-board">
+                  {rows.map((r, i) => (
+                    <div key={`${day}-${r.name}-${i}`} className="mf-board-row">
+                      <span className="mf-board-rank">{i + 1}</span>
+                      <span className="mf-board-name">{r.name}</span>
+                      <span className="mf-board-meta">
+                        {r.solved} solved · {Math.round(r.accuracy * 100)}%
+                      </span>
+                      <span className="mf-board-score">{r.score.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
-          </div>
+          </>
         )}
 
         <button className="mf-btn mf-btn--primary" onClick={onBack}>

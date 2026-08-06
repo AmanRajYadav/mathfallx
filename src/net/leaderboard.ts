@@ -261,6 +261,62 @@ function dedupe(rows: ScoreRow[]): ScoreRow[] {
   return [...best.values()].sort((a, b) => b.score - a.score);
 }
 
+// ------------------------------------------------------- Daily Challenge log
+
+export interface DailyRow {
+  /** `2026-08-06`, the IST calendar day. */
+  day: string;
+  name: string;
+  player_id: string;
+  score: number;
+  solved: number;
+  accuracy: number;
+  best_combo: number;
+  duration_ms: number;
+}
+
+export interface StreakRow {
+  name: string;
+  best_streak: number;
+  current_streak: number;
+  last_played: string;
+  days_played: number;
+}
+
+/**
+ * Who played the Daily Challenge, day by day.
+ *
+ * The Daily is the same forty problems worldwide, so unlike the other modes
+ * its scores are directly comparable — which is what makes a historical log
+ * worth keeping at all. Public, not a teacher-only view: the players are the
+ * ones who care most about who showed up.
+ */
+export async function fetchDailyHistory(days = 21): Promise<DailyRow[]> {
+  // Generous row cap rather than a date filter: PostgREST cannot express
+  // "last N distinct days" directly, and a class produces a handful of rows
+  // per day, so this covers far more history than it needs to.
+  const query = `select=*&order=day.desc,score.desc&limit=${days * 40}`;
+  try {
+    const res = await withTimeout(`${REST}/daily_history?${query}`, { headers: headers() });
+    if (!res.ok) return [];
+    return (await res.json()) as DailyRow[];
+  } catch {
+    return [];
+  }
+}
+
+/** Daily-Challenge streaks per player name. Empty on any failure. */
+export async function fetchStreaks(): Promise<Map<string, StreakRow>> {
+  try {
+    const res = await withTimeout(`${REST}/daily_streaks?select=*`, { headers: headers() });
+    if (!res.ok) return new Map();
+    const rows = (await res.json()) as StreakRow[];
+    return new Map(rows.map((r) => [r.name.toLowerCase(), r]));
+  } catch {
+    return new Map();
+  }
+}
+
 /** True when a leaderboard endpoint is configured at all. */
 export function leaderboardEnabled(): boolean {
   return Boolean(PROJECT && ANON_KEY);

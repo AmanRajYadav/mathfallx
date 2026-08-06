@@ -224,6 +224,24 @@ await check('the server rejects a wave that could not have happened', () => {
   );
 });
 
+await check('a late network reply never hijacks the leaderboard tab', () => {
+  // The queued->done poller runs for up to a minute after a run ends. It used
+  // to call setBoardMode(summary.mode) on success, so a player who finished an
+  // Easy run and then opened the Daily board watched the tab jump back to Easy
+  // on its own — indistinguishable from the app glitching.
+  const poll = shellSrc.slice(shellSrc.indexOf("if (submitState !== 'queued'"));
+  const body = poll.slice(0, poll.indexOf('}, [submitState'));
+  assert.ok(!/setBoardMode\(/.test(body), 'the delayed poller must not change the visible board');
+
+  // The immediate path may set it, but only while the summary is still up.
+  const submit = shellSrc.slice(shellSrc.indexOf('const submitRun = useCallback'));
+  const submitBody = submit.slice(0, submit.indexOf('}, [summary, boardName'));
+  assert.ok(
+    /if \(screenRef\.current === 'over'\) setBoardMode/.test(submitBody),
+    'setBoardMode must be guarded on the player still being on the summary screen',
+  );
+});
+
 await check('submitRun does not call the network directly', () => {
   assert.ok(
     !/submitScore\(/.test(shellSrc),

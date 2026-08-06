@@ -246,7 +246,40 @@ export interface ModeConfig {
   adaptiveStart?: boolean;
   /** Waves taken to climb from the opening difficulty to the player's level. */
   rampWaves?: number;
+  /**
+   * Late-run difficulty steps.
+   *
+   * A capped mode has no runway: Easy pins the difficulty at `ratingCap`
+   * forever, so a strong player reaches wave 113 still answering `3 x 5` and
+   * `6 + 2` and simply never dies. The cap is right for the first hundred
+   * waves — that is what Easy is for — but past a point the mode has to admit
+   * the player has outgrown it. Each tier lifts the ceiling once the wave is
+   * reached; the earlier settings apply below the first one.
+   */
+  tiers?: readonly DifficultyTier[];
 }
+
+/** One step of the late-run difficulty ladder. See `ModeConfig.tiers`. */
+export interface DifficultyTier {
+  /** First wave at which this tier applies. */
+  atWave: number;
+  ratingCap: number;
+  maxAnswer: number;
+  plainBlocksOnly: boolean;
+  /** Shown on the banner when the tier is reached. */
+  label: string;
+}
+
+/**
+ * Waves spent easing into a new tier's rating cap.
+ *
+ * The cap is blended rather than switched so the step is felt as the game
+ * getting harder, not as a wall appearing mid-run. `maxAnswer` and the block
+ * kinds do flip at the boundary — but with the cap still near its old value
+ * the generator keeps asking for easy templates, so the bigger answers arrive
+ * over the following waves rather than all at once.
+ */
+const TIER_BLEND_WAVES = 10;
 
 /**
  * Where every non-Practice run begins, on the Elo scale.
@@ -264,6 +297,14 @@ export const MODES: Record<GameMode, ModeConfig> = {
   easy: {
     mode: 'easy', shield: 5, duration: null, total: null, speed: 0.7, concurrency: 3,
     maxAnswer: 20, ratingCap: 900, plainBlocksOnly: true, rampWaves: 10,
+    // Past wave 120 the mode stops being a floor and starts being a climb
+    // again. Reported from real play: wave 113, 148,000 points, still nothing
+    // but single-digit sums — the run could not end because nothing in it was
+    // ever hard enough to end it.
+    tiers: [
+      { atWave: 120, ratingCap: 1150, maxAnswer: 99, plainBlocksOnly: false, label: 'MEDIUM' },
+      { atWave: 150, ratingCap: 1500, maxAnswer: 999, plainBlocksOnly: false, label: 'HARD' },
+    ],
   },
   arcade: {
     mode: 'arcade', shield: 3, duration: null, total: null, speed: 1, concurrency: 3,
@@ -1233,8 +1274,10 @@ export class GameCore {
 
     // Easy mode ignores a high rating on purpose. Someone who wants small
     // numbers wants small numbers, not the difficulty their history earned.
-    if (this.config.ratingCap !== undefined) {
-      base = Math.min(base, this.config.ratingCap);
+    // The cap itself lifts in the late game — see ModeConfig.tiers.
+    const cap = this.effectiveRatingCap();
+    if (cap !== undefined) {
+      base = Math.min(base, cap);
     }
 
     let skills = this.config.skills;
@@ -1262,12 +1305,45 @@ export class GameCore {
       spread,
       // Three-digit answers are a mouthful mid-arcade, so keep them rare and
       // only once the player has earned them.
-      maxAnswer: this.config.maxAnswer ?? (this.profile.theta > 1500 ? 999 : 200),
+      maxAnswer: this.effectiveMaxAnswer() ?? (this.profile.theta > 1500 ? 999 : 200),
     });
   }
 
+  /** The highest tier reached at `wave`, or null while below the first one. */
+  private tierAt(wave: number): DifficultyTier | null {
+    const tiers = this.config.tiers;
+    if (!tiers || tiers.length === 0) return null;
+    let active: DifficultyTier | null = null;
+    for (const t of tiers) if (wave >= t.atWave) active = t;
+    return active;
+  }
+
+  /** The rating ceiling in force right now, eased across a tier boundary. */
+  private effectiveRatingCap(): number | undefined {
+    const tier = this.tierAt(this.wave);
+    if (!tier) return this.config.ratingCap;
+
+    // Where the cap sat just below this tier: the previous tier's, or the
+    // mode's own if this is the first.
+    const tiers = this.config.tiers ?? [];
+    const i = tiers.indexOf(tier);
+    const prev = i > 0 ? tiers[i - 1].ratingCap : (this.config.ratingCap ?? tier.ratingCap);
+
+    const t = Math.min(1, (this.wave - tier.atWave) / TIER_BLEND_WAVES);
+    return prev + (tier.ratingCap - prev) * (t * t * (3 - 2 * t));
+  }
+
+  private effectiveMaxAnswer(): number | undefined {
+    return this.tierAt(this.wave)?.maxAnswer ?? this.config.maxAnswer;
+  }
+
+  private effectivePlainBlocksOnly(): boolean {
+    const tier = this.tierAt(this.wave);
+    return tier ? tier.plainBlocksOnly : Boolean(this.config.plainBlocksOnly);
+  }
+
   private pickKind(): BlockKind {
-    if (this.config.plainBlocksOnly) return 'normal';
+    if (this.effectivePlainBlocksOnly()) return 'normal';
     if (this.wave >= 5 && this.rng.chance(0.06)) return 'boss';
     if (this.wave >= 3 && this.rng.chance(0.12)) return 'armored';
     if (this.wave >= 2 && this.rng.chance(0.16)) return 'fast';
@@ -1686,9 +1762,22 @@ export class GameCore {
     // for wave 2 keeps the first promotion within reach of a single run.
     const nextWaveAt = this.wave * 8;
     if (this.solved >= nextWaveAt) {
+      const before = this.tierAt(this.wave);
       this.wave += 1;
       this.emit({ type: 'wave', wave: this.wave });
-      this.addPopup(this.width / 2, this.playBottom - 190, `WAVE ${this.wave}`, 280, true);
+
+      // Crossing a difficulty tier is a bigger event than a wave, and it needs
+      // to be legible: the game is about to start asking harder questions, and
+      // a player who is not told will read it as the game breaking.
+      const after = this.tierAt(this.wave);
+      if (after && after !== before) {
+        this.addPopup(this.width / 2, this.playBottom - 250, after.label, 320, true);
+        this.burst(this.width / 2, this.playBottom - 250, Math.round(46 * this.effectBudget), 320, 1.4);
+        this.ring(this.width / 2, this.playBottom - 250, 240, 320, 5);
+        this.flash = Math.max(this.flash, 0.35);
+      } else {
+        this.addPopup(this.width / 2, this.playBottom - 190, `WAVE ${this.wave}`, 280, true);
+      }
       this.hudDirty = true;
     }
 

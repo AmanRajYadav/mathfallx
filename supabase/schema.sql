@@ -134,6 +134,50 @@ begin
     raise exception 'implausible: wave % does not match % solved', new.wave, new.solved;
   end if;
 
+  -- ------------------------------------------------------------------------
+  -- One run, one row.
+  --
+  -- The save screen used to auto-submit while the player was still typing, so
+  -- a single run landed twice: once as "A" and again seconds later as
+  -- "Amogh" — same device, same score, the second being the player correcting
+  -- the first. Verified across five devices in the live table ('A'->'APS',
+  -- 'A'->'Anonymous', 'A'->'Amogh', 'it'->'utsav').
+  --
+  -- That is fixed in the client, but a phone running a cached build keeps
+  -- doing it, and the board is shared — one stale device pollutes it for the
+  -- whole class. The database is the only chokepoint every client must pass
+  -- through, so the rule is enforced here too.
+  -- ------------------------------------------------------------------------
+
+  -- Exact re-send: a retry, a double tap, or a build without the client's
+  -- sent-registry. Cancelling the row (rather than raising) makes the insert
+  -- idempotent, so the client still sees success and stops retrying.
+  perform 1
+  from public.scores
+  where player_id = new.player_id
+    and mode = new.mode
+    and score = new.score
+    and name = new.name
+    and created_at > now() - interval '5 minutes';
+
+  if found then
+    return null;   -- silently drop; the score is already on the board
+  end if;
+
+  -- Rename of the run just submitted. Identical score from the same device
+  -- within two minutes is not two players — it is one run, renamed. The later
+  -- name is the deliberate one, so the earlier row goes.
+  --
+  -- Runs before the rate-limit check below on purpose: the correction often
+  -- arrives within seconds of the mistake, and the limit would otherwise
+  -- reject the very submission that fixes the problem.
+  delete from public.scores
+  where player_id = new.player_id
+    and mode = new.mode
+    and score = new.score
+    and name is distinct from new.name
+    and created_at > now() - interval '2 minutes';
+
   -- Rate limit.
   --
   -- Deliberately a trigger rather than a unique index on a truncated
@@ -217,5 +261,92 @@ select distinct on (mode, player_id, name)
   rating, voice_share, duration_ms, created_at
 from public.scores
 order by mode, player_id, name, score desc, created_at asc;
+
+grant select on public.leaderboard to anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Daily Challenge history
+--
+-- The Daily is the same forty problems for everyone in the world on a given
+-- day, which makes it the one mode where scores are directly comparable — and
+-- the one worth keeping a record of. A teacher wants to see who turned up and
+-- how they did, day by day, and the players want to see it too, so this is
+-- readable by everyone rather than being a private teacher view.
+--
+-- The day boundary is Asia/Kolkata, matching dailyKey() in the client. On a
+-- UTC boundary the new set appeared at 5:30 in the morning, so anyone playing
+-- late at night was filed under the previous day.
+-- ---------------------------------------------------------------------------
+
+drop view if exists public.daily_history;
+create view public.daily_history
+with (security_invoker = true)
+as
+select distinct on (day, name)
+  (created_at at time zone 'Asia/Kolkata')::date as day,
+  name,
+  player_id,
+  score,
+  solved,
+  accuracy,
+  best_combo,
+  duration_ms,
+  created_at
+from public.scores
+where mode = 'daily'
+-- distinct on keeps the first row per (day, name): their best that day, and
+-- the earliest attempt if two runs tied.
+order by day desc, name, score desc, created_at asc;
+
+grant select on public.daily_history to anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Daily streaks
+--
+-- "Is this student showing up every day?" is a different question from "are
+-- they good at it", and the leaderboard could only answer the second one.
+--
+-- Gaps-and-islands: subtracting a per-player row number from the date makes
+-- every consecutive run of days share one anchor value, so consecutive days
+-- can be counted with a plain GROUP BY. A streak counts as *current* if its
+-- last day is today or yesterday — going to bed without playing should not
+-- retroactively erase a streak before the day is even over.
+-- ---------------------------------------------------------------------------
+
+drop view if exists public.daily_streaks;
+create view public.daily_streaks
+with (security_invoker = true)
+as
+with played as (
+  select distinct
+    name,
+    (created_at at time zone 'Asia/Kolkata')::date as day
+  from public.scores
+  where mode = 'daily'
+),
+anchored as (
+  select
+    name,
+    day,
+    day - (row_number() over (partition by name order by day))::int as anchor
+  from played
+),
+runs as (
+  select name, anchor, count(*)::int as len, max(day) as last_day
+  from anchored
+  group by name, anchor
+)
+select
+  name,
+  max(len) as best_streak,
+  coalesce(max(len) filter (
+    where last_day >= ((now() at time zone 'Asia/Kolkata')::date - 1)
+  ), 0) as current_streak,
+  max(last_day) as last_played,
+  sum(len)::int as days_played
+from runs
+group by name;
+
+grant select on public.daily_streaks to anon, authenticated;
 
 grant select on public.leaderboard to anon, authenticated;
