@@ -50,6 +50,15 @@ export class Renderer {
   private frameTimes: number[] = [];
   private lastFrame = 0;
 
+  /**
+   * Whether to label held power-ups with their keyboard shortcut.
+   *
+   * True only where there is a keyboard to press. On a phone the letter is
+   * pure noise over an already small token.
+   */
+  private readonly showKeyHints = typeof window !== 'undefined'
+    && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches === true;
+
   constructor(canvas: HTMLCanvasElement, quality: 'auto' | Quality = 'auto') {
     this.canvas = canvas;
     const ctx = canvas.getContext('2d', { alpha: false });
@@ -952,6 +961,16 @@ export class Renderer {
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       c.fillText(def.icon, 0, 1);
+
+      // Keyboard hint. The shortcuts existed but nothing on screen said so, so
+      // on desktop they may as well not have. Suppressed on touch, where there
+      // is no key to press and the token is tapped directly.
+      if (this.showKeyHints) {
+        c.font = '800 9px ui-monospace, SF Mono, Menlo, Consolas, monospace';
+        c.fillStyle = `hsl(${def.hue},100%,78%)`;
+        c.fillText(def.key.toUpperCase(), 0, slot.r + 8);
+      }
+
       c.restore();
     }
   }

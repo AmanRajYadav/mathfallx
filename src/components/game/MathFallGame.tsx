@@ -601,10 +601,19 @@ const MathFallGame: React.FC = () => {
       else if (e.key === 'Enter') { e.preventDefault(); handleKey('go'); }
       // Space wipes the entry. It is the fastest key to hit blind, which is
       // what you want when a half-typed number is blocking the next answer.
-      else if (e.key === ' ') { e.preventDefault(); handleKey('clear'); }
+      //
+      // stopPropagation as well as preventDefault: if anything on the page
+      // still holds focus — a button the player clicked with the mouse —
+      // Space would otherwise re-activate it, so the clear silently turns into
+      // a second press of whatever was last clicked.
+      else if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleKey('clear');
+      }
       else if (e.key === 'b' || e.key === 'B') { e.preventDefault(); game.triggerOverdrive(); }
       else {
-        // Power-up shortcuts: f freeze, s slow, n nuke, d double, h shield.
+        // Power-up shortcuts: f freeze, s slow, n nuke, d double, l life.
         const key = e.key.toLowerCase();
         const def = POWER_UP_LIST.find((p) => p.key === key);
         if (def) {
@@ -613,8 +622,12 @@ const MathFallGame: React.FC = () => {
         }
       }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    // Capture phase, so gameplay keys are read before any focused control can
+    // consume them. Safe because everything above the digit handling returns
+    // early unless a run is actually in progress — the name field on the
+    // game-over screen still receives every keystroke normally.
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [handleKey, pauseGame, resumeGame, startGame]);
 
   /**

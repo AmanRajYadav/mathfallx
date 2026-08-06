@@ -60,6 +60,16 @@ function voiceLabel(v: VoiceUiState): { label: string; tone: 'ok' | 'warn' | 'di
  */
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'del'];
 
+/**
+ * Whether this is a device with a real keyboard.
+ *
+ * Only used to decide whether to mention keyboard shortcuts — printing
+ * "press N" to a phone user is noise, and hiding it from a desktop player
+ * means the shortcuts may as well not exist.
+ */
+const DESKTOP = typeof window !== 'undefined'
+  && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches === true;
+
 const Controls: React.FC<ControlsProps> = ({
   bottomRef, voice, onToggleVoice, keypadOpen, onToggleKeypad, input, onKey,
   onPause,
@@ -93,7 +103,7 @@ const Controls: React.FC<ControlsProps> = ({
             onPointerDown={(e) => { e.preventDefault(); onKey('clear'); }}
             aria-label={`Entry ${input}. Tap to clear.`}
           >
-            <div className="mf-voice-label">Entry · tap to clear</div>
+            <div className="mf-voice-label">Entry · tap{DESKTOP ? ' or space' : ''} to clear</div>
             <div className="mf-entry">{input}</div>
           </button>
         ) : (

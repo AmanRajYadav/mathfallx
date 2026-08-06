@@ -66,46 +66,39 @@ delete from public.scores a
 commit;
 
 -- ---------------------------------------------------------------------------
--- 4. OPTIONAL — needs your judgement, so it is commented out.
+-- 4. Named removals, requested by the teacher.
 --
--- These seven rows are half-typed names that were never corrected: the player
--- typed one letter, the old build saved it, and they closed the app instead of
--- fixing it. There is no second row proving what the real name was, so nothing
--- above can touch them safely.
+--   'P'        — half-typed 'Pariza Khan', never corrected. Two rows, from two
+--                different devices (bb8d9502, 04ac4e11), which is why nothing
+--                above could prove what the full name should have been.
+--   'AmanTest' — a test run, not a student.
 --
--- Each is from a device that ONLY ever used the short name, so matching them
--- to a student is something only you can do. 'P' in particular cannot be
--- resolved automatically: four different devices produced 'P' and
--- 'Pariza Khan' rows, all with different player_ids, so there is no evidence
--- linking them.
---
--- Prefer renaming to deleting where you know the student — it keeps the score
--- they earned. Uncomment whichever lines apply.
---
---   'P'  5,929 easy    2026-08-02   device bb8d9502
---   'P'  9,976 easy    2026-08-03   device 04ac4e11
---   'A'  2,297 arcade  2026-08-04   device 3183df26
---   'A'  3,741 arcade  2026-08-04   device 3183df26
---   'it'   363 arcade  2026-08-05   device 2ecb8e44
---   'it' 5,643 arcade  2026-08-05   device 2ecb8e44   (same device later used 'utsav')
+-- Matched on the exact name, so a student who genuinely chooses a one-letter
+-- name in future is unaffected. Short names stay perfectly legal.
 -- ---------------------------------------------------------------------------
 
--- Rename (keeps the score) — edit the names to match your students:
+delete from public.scores
+ where name in ('P', 'AmanTest');
+
+-- ---------------------------------------------------------------------------
+-- 5. OPTIONAL — the same kind of leftover, for players I could not identify.
 --
--- update public.scores set name = 'Pariza Khan'
---  where id in ('f9cd37f7-17b4-4800-88b7-54756b38e17f',
---               'e4bc3599-af53-478d-8401-22fb8cade0fc');
+--   'A'    2,297 arcade  2026-08-04  device 3183df26
+--   'A'    3,741 arcade  2026-08-04  device 3183df26
+--   'it'     363 arcade  2026-08-05  device 2ecb8e44
+--   'it'   5,643 arcade  2026-08-05  device 2ecb8e44  (later used 'utsav')
+--
+-- Prefer renaming where you recognise the student — it keeps the score they
+-- earned:
 --
 -- update public.scores set name = 'Utsav'
 --  where id in ('d3b6a6a8-28a8-42d2-a773-7ef778f7e0ad',
 --               '7aa264d4-7f7e-482f-8ed0-075b5c507139');
-
--- Or delete outright, if you would rather they replay:
+--
+-- Or remove them:
 --
 -- delete from public.scores
---  where id in ('f9cd37f7-17b4-4800-88b7-54756b38e17f',
---               'e4bc3599-af53-478d-8401-22fb8cade0fc',
---               '6d61fec0-7f6c-40f7-aa4d-59903703023d',
+--  where id in ('6d61fec0-7f6c-40f7-aa4d-59903703023d',
 --               'cb188061-2b66-4756-abd0-995d3710b833',
 --               '46e1a42c-d5b5-4372-96b7-9321d3da9b84',
 --               'd3b6a6a8-28a8-42d2-a773-7ef778f7e0ad',

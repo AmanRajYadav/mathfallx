@@ -92,7 +92,9 @@ export const POWER_UPS: Record<PowerUpType, PowerUpDef> = {
     hue: 150,
     duration: 0,
     blurb: 'Restores one shield',
-    key: 'h',
+    // L for life. The shields read as lives on screen, and 'l' is what anyone
+    // reaches for; 'h' (for heal) was a guess nobody would make.
+    key: 'l',
     auto: false,
     spoken: ['shield', 'shields', 'sheild', 'guard', 'armor', 'armour', 'shed'],
   },

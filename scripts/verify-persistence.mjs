@@ -434,6 +434,38 @@ section('the daily challenge changes at midnight IST');
   });
 }
 
+section('desktop shortcuts');
+
+await check('every power-up has a distinct, memorable key', () => {
+  const src = readFileSync(join(root, 'src/engine/powerups.ts'), 'utf8');
+  const want = { nuke: 'n', freeze: 'f', double: 'd', shield: 'l', slow: 's' };
+  for (const [type, key] of Object.entries(want)) {
+    const block = src.slice(src.indexOf(`  ${type}: {`));
+    const found = block.slice(0, block.indexOf('},')).match(/key: '(\w)'/);
+    assert.ok(found, `${type} has no key binding`);
+    assert.equal(found[1], key, `${type} should be '${key}', got '${found[1]}'`);
+  }
+  // Distinct, or one key would silently shadow another.
+  const keys = Object.values(want);
+  assert.equal(new Set(keys).size, keys.length, 'two power-ups share a key');
+});
+
+await check('space clears the entry even with a control focused', () => {
+  // Buttons keep focus after a mouse click, and Space re-activates a focused
+  // button — so a bare preventDefault leaves the clear working only when
+  // nothing has been clicked, which is exactly the "sometimes it does not
+  // work" report.
+  const handler = shellSrc.slice(shellSrc.indexOf('const onKeyDown = (e: KeyboardEvent)'));
+  const body = handler.slice(0, handler.indexOf('window.addEventListener'));
+  const spaceBranch = body.slice(body.indexOf("e.key === ' '"), body.indexOf("e.key === 'b'"));
+  assert.ok(/stopPropagation\(\)/.test(spaceBranch), 'space must stop propagation, not just preventDefault');
+  assert.ok(/handleKey\('clear'\)/.test(spaceBranch), 'space must clear the entry');
+  assert.ok(
+    /addEventListener\('keydown', onKeyDown, true\)/.test(shellSrc),
+    'gameplay keys must be read in the capture phase, ahead of any focused control',
+  );
+});
+
 section('the keypad does not reject digits it cannot judge');
 
 await check('an empty board holds the entry instead of rejecting it', () => {
