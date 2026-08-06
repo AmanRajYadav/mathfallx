@@ -731,7 +731,13 @@ const MathFallGame: React.FC = () => {
       name,
       score: s.score,
       mode: s.mode,
-      wave: hud.wave,
+      // From the durable run summary, not live HUD state. `hud.wave` used to
+      // be sent here and defaults to 1 on a fresh HudState — a real 119-wave
+      // run was recorded on the leaderboard as wave 1 because something
+      // (a remount, a stale render) meant `hud` was not the finished run's
+      // state by the time Save fired. `s.wave` cannot desync like that: it is
+      // captured once, at the moment the run actually ends.
+      wave: s.wave,
       solved: s.solved,
       accuracy: s.accuracy,
       bestCombo: s.bestCombo,
@@ -765,7 +771,7 @@ const MathFallGame: React.FC = () => {
       setSubmitState('queued');
       setSubmitError('');
     });
-  }, [summary, boardName, hud.wave]);
+  }, [summary, boardName]);
   submitRunRef.current = submitRun;
 
   /**

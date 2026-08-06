@@ -193,6 +193,17 @@ export type InputSource = 'voice' | 'touch' | 'key';
 export interface RunSummary {
   mode: GameMode;
   score: number;
+  /**
+   * Captured here, not read from live HUD state, at submit time.
+   *
+   * A real run reached wave 119 and its leaderboard row recorded wave 1 —
+   * `EMPTY_HUD`'s default. The old submit path sent `hud.wave`, React state
+   * that can be stale or reset by the time Save fires, completely decoupled
+   * from the run that actually happened. `score` and `solved` never had this
+   * problem because they were always read from this durable summary; wave is
+   * now captured the same way.
+   */
+  wave: number;
   bestCombo: number;
   solved: number;
   missed: number;
@@ -785,6 +796,7 @@ export class GameCore {
     saveCheckpoint({
       mode: this.config.mode,
       score: this.score,
+      wave: this.wave,
       solved: this.solved,
       missed: this.missed,
       bestCombo: this.bestCombo,
@@ -851,6 +863,7 @@ export class GameCore {
     const summary: RunSummary = {
       mode: this.config.mode,
       score: this.score,
+      wave: this.wave,
       bestCombo: this.bestCombo,
       solved: this.solved,
       missed: this.missed,

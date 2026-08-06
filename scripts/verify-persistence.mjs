@@ -201,6 +201,29 @@ await check('the shell queues before flushing', () => {
   assert.ok(queueAt < flushAt, 'the run must be written to the outbox before the network is touched');
 });
 
+await check('wave is captured on the durable summary, not read from live HUD', () => {
+  // A real 119-wave run was recorded on the leaderboard as wave 1 — the
+  // default value of a fresh HudState — because the old code sent
+  // `wave: hud.wave` (React state) instead of a value tied to the run that
+  // actually happened. score and solved never had this problem because they
+  // were always read off the summary; wave must be too.
+  assert.ok(!/wave: hud\.wave/.test(shellSrc), 'submitRun must not read wave off live hud state');
+  assert.ok(/wave: s\.wave/.test(shellSrc), 'submitRun must send the summary\'s own wave');
+  assert.ok(/^\s*wave: number;/m.test(coreSrc), 'RunSummary must carry its own wave field');
+  assert.ok(/wave: this\.wave,/.test(coreSrc), 'end() must capture wave into the summary at the moment the run ends');
+
+  const checkpointSrc = readFileSync(join(root, 'src/engine/checkpoint.ts'), 'utf8');
+  assert.ok(/wave: number;/.test(checkpointSrc), 'RunCheckpoint must carry wave too, or a recovered run loses it the same way');
+});
+
+await check('the server rejects a wave that could not have happened', () => {
+  const schemaSrc = readFileSync(join(root, 'supabase/schema.sql'), 'utf8');
+  assert.ok(
+    /new\.wave - \(1 \+ floor\(new\.solved \/ 8\.0\)\)/.test(schemaSrc),
+    'the validate_score trigger must tie wave to solved — the anon key is public, so a forged row bypassing the client entirely is one fetch() away in devtools',
+  );
+});
+
 await check('submitRun does not call the network directly', () => {
   assert.ok(
     !/submitScore\(/.test(shellSrc),

@@ -120,6 +120,20 @@ begin
     raise exception 'implausible: combo % exceeds solved %', new.best_combo, new.solved;
   end if;
 
+  -- Wave is not free-form: the client computes it as a pure, deterministic
+  -- function of solved (one more wave every 8 solved, identical formula in
+  -- every mode), so a real run's wave and solved can never drift apart. A row
+  -- was found on the live board with solved = 952 and wave = 1 — the client's
+  -- *default* HUD value, sent because that field was read from stale UI state
+  -- instead of the finished run (fixed client-side). Nothing here proves that
+  -- particular row was forged rather than buggy, but the same gap is exactly
+  -- what a forged payload would leave if whoever built it did not bother
+  -- reproducing this relationship. A tolerance of 3 waves absorbs any timing
+  -- slack in the client's own catch-up logic without weakening the check.
+  if abs(new.wave - (1 + floor(new.solved / 8.0))) > 3 then
+    raise exception 'implausible: wave % does not match % solved', new.wave, new.solved;
+  end if;
+
   -- Rate limit.
   --
   -- Deliberately a trigger rather than a unique index on a truncated

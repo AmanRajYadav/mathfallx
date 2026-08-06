@@ -28,6 +28,7 @@ export interface RunCheckpoint {
   at: number;
   mode: GameMode;
   score: number;
+  wave: number;
   solved: number;
   missed: number;
   bestCombo: number;
@@ -78,6 +79,7 @@ export function summaryFrom(c: RunCheckpoint): RunSummary {
   return {
     mode: c.mode,
     score: c.score,
+    wave: c.wave,
     bestCombo: c.bestCombo,
     solved: c.solved,
     missed: c.missed,
