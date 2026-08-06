@@ -434,7 +434,60 @@ section('the daily challenge changes at midnight IST');
   });
 }
 
+section('the rank you are shown is your own');
+
+await check('rank is resolved by device AND name, never name alone', () => {
+  const lbSrc = readFileSync(join(root, 'src/net/leaderboard.ts'), 'utf8');
+  const fn = lbSrc.slice(lbSrc.indexOf('export async function fetchRank'));
+  const body = fn.slice(0, fn.indexOf('\n}'));
+  assert.ok(
+    /r\.player_id === me && r\.name\.toLowerCase\(\) === key/.test(body),
+    'fetchRank must match the player\'s own row, not the first row carrying that name',
+  );
+});
+
+await check('two players sharing a name get different ranks', () => {
+  // The exact shape of the live board when this was reported: two devices
+  // both called "Anonymous", at #3 and #6.
+  const board = [
+    { name: 'Ayush',     score: 20000, player_id: 'other1' },
+    { name: 'Aarushi',   score: 15000, player_id: 'other2' },
+    { name: 'Anonymous', score: 10426, player_id: 'deviceA' },
+    { name: 'Shourya',   score: 9000,  player_id: 'other3' },
+    { name: 'Aditi',     score: 8000,  player_id: 'other4' },
+    { name: 'Anonymous', score: 7744,  player_id: 'deviceB' },
+  ];
+  const rankFor = (me) =>
+    board.findIndex((r) => r.player_id === me && r.name.toLowerCase() === 'anonymous') + 1;
+
+  assert.equal(rankFor('deviceA'), 3, 'the higher Anonymous is 3rd');
+  assert.equal(rankFor('deviceB'), 6, 'the lower Anonymous is 6th, not 3rd');
+
+  // What the old code did, for contrast: both devices were told "#3".
+  const nameOnly = board.findIndex((r) => r.name.toLowerCase() === 'anonymous') + 1;
+  assert.equal(nameOnly, 3);
+  assert.notEqual(nameOnly, rankFor('deviceB'), 'name-only lookup is what reported the wrong rank');
+});
+
 section('desktop shortcuts');
+
+await check('the ship holds five power-ups, laid out without overlap', () => {
+  const m = coreSrc.match(/const MAX_INVENTORY = (\d+)/);
+  assert.ok(m, 'no MAX_INVENTORY');
+  assert.equal(Number(m[1]), 5, 'the ship should hold five');
+
+  // Slots alternate left/right from the centre. With five, the outermost sits
+  // two steps out; the step must clear the token diameter or they smear.
+  const slots = coreSrc.slice(coreSrc.indexOf('powerSlots():'));
+  const gap = Number(slots.match(/const gap = (\d+)/)[1]);
+  const step = Number(slots.match(/const step = (\d+)/)[1]);
+  const r = Number(slots.match(/r: (\d+)/)[1]);
+  assert.ok(step >= r * 2, `step ${step} must clear the token diameter ${r * 2}`);
+
+  // Widest reach on a 360px phone must stay on screen.
+  const outermost = gap + 2 * step + r;
+  assert.ok(outermost < 180, `outermost edge ${outermost}px would run off a 360px screen`);
+});
 
 await check('every power-up has a distinct, memorable key', () => {
   const src = readFileSync(join(root, 'src/engine/powerups.ts'), 'utf8');

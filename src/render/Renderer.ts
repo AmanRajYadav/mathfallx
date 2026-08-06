@@ -965,10 +965,12 @@ export class Renderer {
       // Keyboard hint. The shortcuts existed but nothing on screen said so, so
       // on desktop they may as well not have. Suppressed on touch, where there
       // is no key to press and the token is tapped directly.
+      // Above the token, not below: the slots sit just over the ship, and a
+      // label underneath lands on the ground line.
       if (this.showKeyHints) {
         c.font = '800 9px ui-monospace, SF Mono, Menlo, Consolas, monospace';
         c.fillStyle = `hsl(${def.hue},100%,78%)`;
-        c.fillText(def.key.toUpperCase(), 0, slot.r + 8);
+        c.fillText(def.key.toUpperCase(), 0, -(slot.r + 7));
       }
 
       c.restore();

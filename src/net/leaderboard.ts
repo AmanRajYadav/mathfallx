@@ -196,12 +196,21 @@ export interface LeaderboardResult {
   selfIndex: number;
 }
 
-/** Where a name places in a mode, 1-based. Null when it is not on the board. */
+/**
+ * Where *this player's* run places in a mode, 1-based. Null when off the board.
+ *
+ * Matched on device AND name, never name alone. Two people picking the same
+ * name is normal in a classroom — the live board has had two "Anonymous", two
+ * "Shourya", two "Amogh" — and a name-only lookup returns whichever of them
+ * scored highest. Reported as: finished 6th, told "#1", then "#4" after a
+ * rename. Every one of those numbers belonged to somebody else.
+ */
 export async function fetchRank(mode: string, name: string): Promise<number | null> {
   const board = await fetchTop(mode, 200, name);
   if (board.status !== 'ok') return null;
   const key = sanitizeName(name).toLowerCase();
-  const i = board.rows.findIndex((r) => r.name.toLowerCase() === key);
+  const me = playerId();
+  const i = board.rows.findIndex((r) => r.player_id === me && r.name.toLowerCase() === key);
   return i === -1 ? null : i + 1;
 }
 
@@ -227,10 +236,21 @@ export async function fetchTop(
       if (!res.ok) continue;
       const rows = (await res.json()) as ScoreRow[];
       const deduped = source === 'scores' ? dedupe(rows) : rows;
-      // Highlight by name when one is given: a shared device now carries
-      // several players, so "this device" no longer identifies a person.
+
+      // Highlight this device's own row for the given name. A shared phone
+      // carries several players, so the device alone does not identify a
+      // person — but the name alone does not either, since two students on
+      // two phones can pick the same one. Both together do.
+      //
+      // The name-only fallback is deliberate and only cosmetic: a player who
+      // cleared their storage has a new device id, and highlighting the row
+      // that carries their name is better than highlighting nothing. It is
+      // never used for the rank *number* — see fetchRank.
       const selfIndex = wanted
-        ? deduped.findIndex((r) => r.name.toLowerCase() === wanted)
+        ? (() => {
+            const exact = deduped.findIndex((r) => r.player_id === me && r.name.toLowerCase() === wanted);
+            return exact !== -1 ? exact : deduped.findIndex((r) => r.name.toLowerCase() === wanted);
+          })()
         : deduped.findIndex((r) => r.player_id === me);
       return { status: 'ok', rows: deduped, selfIndex };
     } catch {

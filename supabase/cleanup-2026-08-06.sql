@@ -3,7 +3,12 @@
 -- Run in the Supabase dashboard: SQL Editor -> New query -> paste -> Run.
 -- Re-run supabase/schema.sql first, so the trigger stops new junk arriving.
 --
--- Three parts, in order of how confident each one is.
+-- SAFE TO RE-RUN. Every statement is a delete of rows matched by their own
+-- content, so anything already removed by an earlier run simply matches
+-- nothing the second time. If you have already run this and only need the
+-- newly added names, part 4 is the only one that will do anything.
+--
+-- Parts 1-3 ran on 2026-08-06; part 4 was added afterwards.
 
 begin;
 
@@ -71,6 +76,7 @@ commit;
 --   'P'        — half-typed 'Pariza Khan', never corrected. Two rows, from two
 --                different devices (bb8d9502, 04ac4e11), which is why nothing
 --                above could prove what the full name should have been.
+--   'A'        — the same, from device 3183df26, which only ever used 'A'.
 --   'AmanTest' — a test run, not a student.
 --
 -- Matched on the exact name, so a student who genuinely chooses a one-letter
@@ -78,31 +84,21 @@ commit;
 -- ---------------------------------------------------------------------------
 
 delete from public.scores
- where name in ('P', 'AmanTest');
+ where name in ('P', 'A', 'AmanTest');
 
 -- ---------------------------------------------------------------------------
--- 5. OPTIONAL — the same kind of leftover, for players I could not identify.
+-- 5. OPTIONAL — the same kind of leftover, for a player I could not identify.
 --
---   'A'    2,297 arcade  2026-08-04  device 3183df26
---   'A'    3,741 arcade  2026-08-04  device 3183df26
 --   'it'     363 arcade  2026-08-05  device 2ecb8e44
 --   'it'   5,643 arcade  2026-08-05  device 2ecb8e44  (later used 'utsav')
 --
--- Prefer renaming where you recognise the student — it keeps the score they
--- earned:
+-- Prefer renaming to deleting here — it keeps the score they earned:
 --
--- update public.scores set name = 'Utsav'
---  where id in ('d3b6a6a8-28a8-42d2-a773-7ef778f7e0ad',
---               '7aa264d4-7f7e-482f-8ed0-075b5c507139');
+-- update public.scores set name = 'Utsav' where name = 'it';
 --
 -- Or remove them:
 --
--- delete from public.scores
---  where id in ('6d61fec0-7f6c-40f7-aa4d-59903703023d',
---               'cb188061-2b66-4756-abd0-995d3710b833',
---               '46e1a42c-d5b5-4372-96b7-9321d3da9b84',
---               'd3b6a6a8-28a8-42d2-a773-7ef778f7e0ad',
---               '7aa264d4-7f7e-482f-8ed0-075b5c507139');
+-- delete from public.scores where name = 'it';
 
 -- ---------------------------------------------------------------------------
 -- Check. Short names left here are either a deliberate choice or one of the

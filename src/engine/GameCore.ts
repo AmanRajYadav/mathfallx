@@ -331,7 +331,15 @@ const MAX_POPUPS = 20;
 const MAX_PICKUPS = 8;
 const MAX_SHOCKWAVES = 10;
 const MAX_SHARDS = 7;
-const MAX_INVENTORY = 3;
+/**
+ * Power-ups the ship can hold at once.
+ *
+ * Five, not three. At three a good run overflows constantly — the drop rate
+ * rises with combo, so exactly when you are playing well enough to earn them
+ * is when they start being thrown away. They dock either side of the ship, so
+ * an odd number leaves one more on the left than the right.
+ */
+const MAX_INVENTORY = 5;
 const HUD_INTERVAL_MS = 90;
 
 /**
@@ -1951,10 +1959,13 @@ export class GameCore {
     const cx = this.width / 2;
     const cy = this.playBottom - 20;
     const gap = 34;
+    // Step is wider than the token diameter (34) so a full rack of five reads
+    // as five separate things rather than one overlapping smear.
+    const step = 38;
     return this.inventory.map((type, i) => {
       const rank = Math.floor(i / 2) + 1;
       const side = i % 2 === 0 ? -1 : 1;
-      return { type, x: cx + side * (gap + (rank - 1) * 30), y: cy, r: 17 };
+      return { type, x: cx + side * (gap + (rank - 1) * step), y: cy, r: 17 };
     });
   }
 
